@@ -131,15 +131,20 @@ class Network {
 		$ok = 0;
 		try {
 			if ( $this->env->is_behind_bext() ) {
-				$res = $this->env->purge_proxy(
+				$host   = $this->env->canonical_host();
+				$prefix = $this->env->home_path();
+				$res    = $this->env->purge_proxy(
 					array(
-						'host'     => $this->env->canonical_host(),
+						'host'     => $host,
 						'paths'    => array(),
-						'prefixes' => array( $this->env->home_path() ),
+						'prefixes' => array( $prefix ),
 					),
 					$blocking
 				);
 				$ok = $blocking ? ( ( is_array( $res ) && 200 === $res['code'] ) ? 1 : 0 ) : 1;
+
+				/** @see Cache::fire_after_purge() — same contract, network context. */
+				do_action( 'bext/after_purge', $host, array(), array( $prefix ) );
 			}
 		} finally {
 			restore_current_blog();

@@ -94,7 +94,48 @@ class Commands {
 		if ( ! is_array( $res ) || 200 !== $res['code'] ) {
 			\WP_CLI::error( 'Purge returned HTTP ' . ( is_array( $res ) ? $res['code'] : '?' ) );
 		}
+		do_action( 'bext/after_purge', $host, $body['paths'], $body['prefixes'] );
 		\WP_CLI::success( ( '' !== $path ? "Purged {$path}" : 'Purged entire site' ) . ' — ' . $res['body'] );
+	}
+
+	/**
+	 * Flush both the bext edge cache (entire site) and the WordPress object cache.
+	 *
+	 * The "big hammer": use after a deploy or a bulk data import when you want
+	 * everything fresh — the persistent object cache (Redis/Memcached, if any) and
+	 * bext's edge cache for this site, in one command.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp bext flush
+	 *
+	 * @when after_wp_load
+	 */
+	public function flush( $args, $assoc ): void {
+		$env  = $this->plugin->env();
+		$host = $env->canonical_host();
+
+		$flushed_object = function_exists( 'wp_cache_flush' ) ? (bool) wp_cache_flush() : false;
+		if ( $flushed_object ) {
+			\WP_CLI::log( 'Object cache flushed.' );
+		} else {
+			\WP_CLI::log( 'Object cache: nothing to flush (no persistent cache).' );
+		}
+
+		$body = array(
+			'host'     => $host,
+			'paths'    => array(),
+			'prefixes' => array( $env->home_path() ),
+		);
+		$res  = $env->purge_proxy( $body, true );
+		if ( is_wp_error( $res ) ) {
+			\WP_CLI::error( 'Edge purge failed: ' . $res->get_error_message() );
+		}
+		if ( ! is_array( $res ) || 200 !== $res['code'] ) {
+			\WP_CLI::error( 'Edge purge returned HTTP ' . ( is_array( $res ) ? $res['code'] : '?' ) );
+		}
+		do_action( 'bext/after_purge', $host, $body['paths'], $body['prefixes'] );
+		\WP_CLI::success( 'Flushed bext edge cache for the entire site — ' . $res['body'] );
 	}
 
 	/**

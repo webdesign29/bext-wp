@@ -209,6 +209,18 @@ class Cache {
 			$paths[] = $this->url_to_path( $author );
 		}
 
+		// Page 2 of the post-type archive: a new/removed entry can shift what
+		// lands on the second page, and that page is cached independently.
+		if ( $archive ) {
+			$paths[] = $this->url_to_path( trailingslashit( $archive ) . 'page/2/' );
+		}
+
+		// Attachment pages: their content (caption/description/parent link)
+		// depends on the parent post, so purge them when the parent changes.
+		foreach ( $this->attachment_paths( $post_id ) as $att_path ) {
+			$paths[] = $att_path;
+		}
+
 		foreach ( get_object_taxonomies( $type ) as $tax ) {
 			$terms = get_the_terms( $post_id, $tax );
 			if ( is_array( $terms ) ) {
@@ -341,9 +353,32 @@ class Cache {
 
 		$this->env->purge_proxy( $body, false );
 		$this->log_purge( $count, $sample );
+		$this->fire_after_purge( $host, $body );
 
 		$this->paths     = array();
 		$this->purge_all = false;
+	}
+
+	/**
+	 * Fire the post-purge extensibility hook with the host and what was purged.
+	 *
+	 * @param string $host Canonical host the purge targeted.
+	 * @param array  $body { host, paths[], prefixes[] } sent to bext.
+	 */
+	private function fire_after_purge( string $host, array $body ): void {
+		/**
+		 * Fires after a purge request is dispatched to bext.
+		 *
+		 * @param string   $host     Canonical host the purge targeted.
+		 * @param string[] $paths    Relative paths purged (empty for a prefix purge).
+		 * @param string[] $prefixes Relative prefixes purged (empty for a path purge).
+		 */
+		do_action(
+			'bext/after_purge',
+			$host,
+			isset( $body['paths'] ) ? (array) $body['paths'] : array(),
+			isset( $body['prefixes'] ) ? (array) $body['prefixes'] : array()
+		);
 	}
 
 	// ---------------------------------------------------------------------
@@ -458,6 +493,7 @@ class Cache {
 		$res = $this->env->purge_proxy( $body, true );
 		$ok  = is_array( $res ) && 200 === $res['code'];
 		$this->log_purge( '' !== $path && '/' !== $path ? 1 : 'all', $label, $ok ? 'manual-ok' : 'manual-fail' );
+		$this->fire_after_purge( $host, $body );
 
 		$back = wp_get_referer() ? wp_get_referer() : admin_url();
 		wp_safe_redirect( add_query_arg( 'bext_purged', $ok ? '1' : '0', $back ) );
@@ -498,6 +534,39 @@ class Cache {
 	// ---------------------------------------------------------------------
 	// Helpers
 	// ---------------------------------------------------------------------
+
+	/**
+	 * Relative paths for a post's published attachment pages (if any). Bounded so
+	 * a media-heavy post can't balloon a single purge.
+	 *
+	 * @param int $post_id Parent post ID.
+	 * @return string[] Relative attachment-page paths.
+	 */
+	private function attachment_paths( int $post_id ): array {
+		if ( ! function_exists( 'get_attached_media' ) ) {
+			return array();
+		}
+		$paths = array();
+		$media = get_attached_media( '', $post_id );
+		if ( ! is_array( $media ) ) {
+			return $paths;
+		}
+		$max = (int) apply_filters( 'bext/purge_max_attachment_pages', 20 );
+		foreach ( $media as $att ) {
+			if ( count( $paths ) >= $max ) {
+				break;
+			}
+			$id = is_object( $att ) && isset( $att->ID ) ? (int) $att->ID : 0;
+			if ( ! $id ) {
+				continue;
+			}
+			$link = get_attachment_link( $id );
+			if ( $link ) {
+				$paths[] = $this->url_to_path( $link );
+			}
+		}
+		return $paths;
+	}
 
 	private function url_to_path( string $url ): string {
 		$path = wp_parse_url( $url, PHP_URL_PATH );

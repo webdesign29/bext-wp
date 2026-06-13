@@ -12,7 +12,8 @@ All hooks are namespaced `bext/`.
 | `bext/enable_sdk_email` | `bool` | `true` | Allow the wp_mail bridge (also needs the setting/constant). |
 | `bext/enable_sdk_jobs` | `bool` | `true` | Allow the job bridge. |
 | `bext/enable_warning_capture` | `bool` | `true` | Allow PHP-warning capture (when capture is on). |
-| `bext/purge_urls_for_post` | `string[] $paths, int $post_id` | computed set | Customize which relative paths are purged for a post. |
+| `bext/purge_urls_for_post` | `string[] $paths, int $post_id` | computed set | Customize which relative paths are purged for a post (permalink + home + archives + archive page 2 + attachment pages + terms + author). |
+| `bext/purge_max_attachment_pages` | `int` | `20` | Cap on how many of a post's attachment pages are added to its purge set. |
 | `bext/anonymous_cache_control` | `string` | the setting | `Cache-Control` for anonymous pages (empty = defer to vhost). |
 | `bext/as_concurrent_batches` | `int` | `1` | Action Scheduler concurrent batches. |
 | `bext/as_time_limit` | `int` | `min(20,…)` | Action Scheduler per-run time limit (s). |
@@ -35,10 +36,16 @@ $id = apply_filters( 'bext/enqueue_job', null, 'emails', array( 'to' => 'a@b.co'
 | Action | Args | Fires |
 |---|---|---|
 | `bext/booted` | `Plugin $plugin` | After all modules boot. |
+| `bext/after_purge` | `string $host, string[] $paths, string[] $prefixes` | After every purge (auto on `shutdown`, manual admin-bar, network cross-site, WP-CLI). `$paths` is empty for a site-wide/prefix purge; `$prefixes` is empty for a path purge. |
 | `bext/enqueue` | `string $name, mixed $payload, int|null $delay` | **Action form** — fire-and-forget enqueue. |
 | `bext/sdk_email_fallback` | `mixed $res, array $atts` | When bext can't take an email and WordPress sends it instead. |
 
 ```php
+// Mirror every bext purge to a second CDN / log it:
+add_action( 'bext/after_purge', function ( $host, $paths, $prefixes ) {
+    error_log( sprintf( 'bext purged %s: %s', $host, wp_json_encode( $paths ?: $prefixes ) ) );
+}, 10, 3 );
+
 // Log when the bext email bridge falls back to WP:
 add_action( 'bext/sdk_email_fallback', function ( $res, $atts ) {
     error_log( 'bext email fallback: ' . wp_json_encode( $res ) );
@@ -54,5 +61,6 @@ do_action( 'bext/enqueue', 'thumbnails', array( 'attachment' => 42 ) );
 wp bext status              # integration status
 wp bext purge              # purge the whole site cache
 wp bext purge /about/      # purge one path (positional; --url/--path are WP-CLI globals)
+wp bext flush              # flush the WP object cache (wp_cache_flush) + the whole edge cache
 wp bext doctor             # run health checks
 ```

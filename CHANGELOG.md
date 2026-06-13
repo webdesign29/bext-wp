@@ -3,6 +3,45 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.5.0] - 2026-06-13
+
+Extensibility, a broader purge set, a `wp bext flush` command, richer diagnostics — and a much
+deeper test suite.
+
+### Added
+- **`bext/after_purge` action** — fires after every purge (auto, manual admin-bar, network
+  cross-site, and WP-CLI) with the host and exactly what was purged:
+  `do_action( 'bext/after_purge', string $host, string[] $paths, string[] $prefixes )`. Lets you
+  mirror purges to a second CDN, log them, ping a webhook, etc.
+- **Broader default post-purge set** (still behind the `bext/purge_urls_for_post` filter): the
+  post-type archive's **page 2** (`/post/page/2/`) and any **attachment pages** the post owns are
+  now purged alongside the permalink/home/archives/feeds. Attachment-page count is bounded
+  (`bext/purge_max_attachment_pages`, default 20) so a media-heavy post can't balloon a purge.
+- **`wp bext flush`** — the "big hammer": flushes the WordPress **object cache** (`wp_cache_flush()`,
+  e.g. Redis/Memcached) *and* the bext edge cache for the whole site, in one command. Use after a
+  deploy or bulk import.
+- **Dashboard diagnostics**: the *bext server* card now surfaces the last health probe's
+  `x-bext-cache` / `x-bext-php` (+ `x-bext-wp` / `server`) response headers as small badges, when
+  bext returns them. `Env::bext_get()` now returns a `headers` map; `Env::bext_response_headers()`
+  extracts just the diagnostic ones (sanitized).
+
+### Tests
+- Roughly tripled the suite: **230 assertions across 10 files** (was 84 across 6).
+- New `CronTest` (taming filters + `stats()` against a stubbed Action Scheduler store, incl.
+  exception-safe counts and the oldest-due path), `NetworkTest` (`purge_blog` blog-id validation,
+  exception-safe `switch_to_blog`, blocking-vs-non-blocking contract, all-sites loop, network
+  `after_purge`), `HealthTest` (`checks()` decision logic + the `bext/health_checks` filter), and
+  `SettingsTest` (`sanitize()` whitelist/coercion + the cloud-without-endpoint guard).
+- `CachePathsTest` greatly expanded: the full post purge set (incl. the broadened paths), dedup/set
+  semantics, the `flush()` body shape, `after_purge` args, and purge-on-save gating.
+- `EnvSettingsTest` adds `bext_response_headers()` + host/path normalization coverage.
+- `tests/bootstrap.php` gained stubs for posts/permalinks/terms/attachments, multisite
+  (`get_site`/`switch_to_blog`), the object cache, and a `do_action` call log + small test helpers.
+
+### Notes
+- All changes are escaped/nonce'd, multisite-safe, PHP 7.4-compatible, and fail open. The Updater
+  is untouched.
+
 ## [0.4.3] - 2026-06-13
 
 Self-hosted auto-updates.

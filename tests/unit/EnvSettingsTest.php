@@ -62,6 +62,9 @@ if ( ! function_exists( 'get_option' ) ) {
 		$GLOBALS['_bext_netopts'][ $k ] = $v;
 		return true;
 	}
+	function is_wp_error( $thing ) {
+		return $thing instanceof \WP_Error;
+	}
 }
 
 require __DIR__ . '/../../src/Env.php';
@@ -189,6 +192,50 @@ $check( ( new Env() )->app_id() === 'example.test-blog2', 'subdir multisite app_
 $GLOBALS['_bext_multisite'] = false;
 $GLOBALS['_bext_home']      = 'https://example.test';
 $setnet( array() );
+
+// --- home_path / canonical_host ---
+$GLOBALS['_bext_home'] = 'https://Example.TEST/Blog';
+$check( ( new Env() )->canonical_host() === 'example.test', 'canonical_host is lowercased' );
+$check( ( new Env() )->home_path() === '/Blog/', 'home_path keeps base-path case but normalizes slashes' );
+$GLOBALS['_bext_home'] = 'https://example.test';
+
+// --- bext_response_headers(): pull only the diagnostic headers, sanitized ---
+if ( ! function_exists( 'wp_remote_retrieve_header' ) ) {
+	function wp_remote_retrieve_header( $res, $name ) {
+		if ( ! is_array( $res ) || empty( $res['headers'] ) ) {
+			return '';
+		}
+		return $res['headers'][ strtolower( $name ) ] ?? '';
+	}
+}
+
+$e = new Env();
+$h = $e->bext_response_headers(
+	array(
+		'headers' => array(
+			'x-bext-cache' => 'HIT',
+			'x-bext-php'   => '8.3',
+			'x-bext-wp'    => '0.5.0',
+			'server'       => 'bext/2.0',
+			'date'         => 'ignored',
+		),
+	)
+);
+$check( ( $h['x-bext-cache'] ?? '' ) === 'HIT', 'bext_response_headers extracts x-bext-cache' );
+$check( ( $h['x-bext-php'] ?? '' ) === '8.3', 'bext_response_headers extracts x-bext-php' );
+$check( ( $h['x-bext-wp'] ?? '' ) === '0.5.0', 'bext_response_headers extracts x-bext-wp' );
+$check( ( $h['server'] ?? '' ) === 'bext/2.0', 'bext_response_headers extracts server' );
+$check( ! isset( $h['date'] ), 'bext_response_headers ignores non-diagnostic headers' );
+
+$h2 = $e->bext_response_headers( array( 'headers' => array( 'x-bext-cache' => 'MISS' ) ) );
+$check( $h2 === array( 'x-bext-cache' => 'MISS' ), 'only-present headers are returned (no empty padding)' );
+
+$h3 = $e->bext_response_headers( array( 'headers' => array() ) );
+$check( $h3 === array(), 'no headers → empty map' );
+
+// An array-valued header (some transports) → first value taken.
+$h4 = $e->bext_response_headers( array( 'headers' => array( 'x-bext-cache' => array( 'STALE', 'extra' ) ) ) );
+$check( ( $h4['x-bext-cache'] ?? '' ) === 'STALE', 'array-valued header collapses to the first value' );
 
 // --- constant overrides setting (defined last; constants are immutable) ---
 define( 'BEXT_WP_MODE', 'off' );

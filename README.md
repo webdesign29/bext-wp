@@ -33,7 +33,7 @@ workers.
 
 | Module | What it does |
 |---|---|
-| **Cache** | Purge-on-change: hooks post/term/menu/option/comment/WooCommerce events, computes the affected URLs (permalink + home + archives + feeds + sitemap), coalesces them, and fires **one** non-blocking surgical purge on `shutdown`. Personalization-safe `Cache-Control`. Manual purge from the admin bar + WP-CLI. |
+| **Cache** | Purge-on-change: hooks post/term/menu/option/comment/WooCommerce events, computes the affected URLs (permalink + home + archives + paginated archive + attachment pages + feeds + sitemap), coalesces them, and fires **one** non-blocking surgical purge on `shutdown`. Personalization-safe `Cache-Control`. Manual purge from the admin bar + WP-CLI. Fires a `bext/after_purge` action so you can mirror/log purges. |
 | **Cron** | Disables Action Scheduler's async loopback runner (defers to the existing system cron), bounds batch concurrency/time. |
 | **Health** | Config checks, known-noisy-plugin detection, optional capture of recent PHP warnings. |
 | **Admin** | A wp-admin **Bext** dashboard + admin-bar status pill: integration status, purge log, Action Scheduler queue depth, health checks, server reachability. |
@@ -85,16 +85,19 @@ Full reference: **[docs/configuration.md](docs/configuration.md)** · Hooks: **[
 wp bext status                 # integration status
 wp bext purge                  # purge entire site cache
 wp bext purge /blog/hello/     # purge one path (positional)
+wp bext flush                  # flush the object cache + the whole edge cache
 wp bext doctor                 # run health checks
 ```
 
 ## Testing
 
 ```bash
-for t in tests/unit/*.php; do php "$t"; done   # WP-free unit tests
+for t in tests/unit/*.php; do php "$t"; done   # WP-free unit tests (230 assertions, 10 files)
 ```
 
-CI lints on PHP 7.4/8.1/8.3 and runs the unit tests. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The unit tests are WordPress-free: `tests/bootstrap.php` stubs the WP functions the plugin touches
+(options, hooks, posts/permalinks/terms, multisite). Each file prints `all passed`. CI lints on PHP
+7.4/8.1/8.3 and runs the unit tests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Sponsors
 

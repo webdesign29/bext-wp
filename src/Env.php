@@ -455,8 +455,33 @@ class Env {
 			return $res;
 		}
 		return array(
-			'code' => (int) wp_remote_retrieve_response_code( $res ),
-			'body' => (string) wp_remote_retrieve_body( $res ),
+			'code'    => (int) wp_remote_retrieve_response_code( $res ),
+			'body'    => (string) wp_remote_retrieve_body( $res ),
+			'headers' => $this->bext_response_headers( $res ),
 		);
+	}
+
+	/**
+	 * Pull bext's diagnostic response headers (x-bext-cache / x-bext-php) out of a
+	 * wp_remote_* response, for the dashboard. Returns only the ones present.
+	 *
+	 * @param array|\WP_Error $res A wp_remote_* response.
+	 * @return array<string,string>
+	 */
+	public function bext_response_headers( $res ): array {
+		$out = array();
+		if ( is_wp_error( $res ) ) {
+			return $out;
+		}
+		foreach ( array( 'x-bext-cache', 'x-bext-php', 'x-bext-wp', 'server' ) as $name ) {
+			$val = wp_remote_retrieve_header( $res, $name );
+			if ( is_array( $val ) ) {
+				$val = reset( $val );
+			}
+			if ( is_string( $val ) && '' !== $val ) {
+				$out[ $name ] = sanitize_text_field( $val );
+			}
+		}
+		return $out;
 	}
 }

@@ -231,11 +231,36 @@ class Admin {
 		$health = $this->env->bext_get( '/__bext/health' );
 		if ( is_array( $health ) && 200 === $health['code'] ) {
 			echo '<p><span class="bext-dot ok"></span> <code>/__bext/health</code> → 200</p>';
+			$this->render_bext_headers( isset( $health['headers'] ) ? (array) $health['headers'] : array() );
 			echo '<pre class="bext-pre">' . esc_html( wp_trim_words( $health['body'], 60 ) ) . '</pre>';
 		} else {
 			echo '<p><span class="bext-dot warn"></span> Could not reach <code>/__bext/health</code> over loopback.</p>';
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * Render bext's diagnostic response headers (x-bext-cache / x-bext-php …) as
+	 * small badges, when the last server probe returned any.
+	 *
+	 * @param array<string,string> $headers Lowercase-keyed header map.
+	 */
+	private function render_bext_headers( array $headers ): void {
+		$labels = array(
+			'x-bext-cache' => 'cache',
+			'x-bext-php'   => 'php',
+			'x-bext-wp'    => 'wp',
+			'server'       => 'server',
+		);
+		$out = '';
+		foreach ( $labels as $key => $label ) {
+			if ( ! empty( $headers[ $key ] ) ) {
+				$out .= '<span class="bext-pill">' . esc_html( $label ) . ': ' . esc_html( (string) $headers[ $key ] ) . '</span> ';
+			}
+		}
+		if ( '' !== $out ) {
+			echo '<p class="bext-muted">Last response: ' . $out . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
 	}
 
 	// ---------------------------------------------------------------------
