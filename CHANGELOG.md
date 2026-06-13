@@ -3,6 +3,30 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.4.0] - 2026-06-13
+
+WordPress Multisite features & compatibility.
+
+### Added
+- **Network Admin → Bext** page (super-admin): network-wide settings (`bext_wp_network_settings`)
+  that act as defaults for every site, with an **Enforce** toggle to override per-site settings.
+- **Cross-site cache management**: a Sites table (per-site bext status, mode, last purge) with
+  per-site **Purge** and **Purge all sites** actions.
+- Per-site Settings shows a notice when settings are network-enforced.
+- `src/Network.php` (loads only on multisite).
+
+### Changed
+- `Env` now resolves every setting with multisite layering: **constant > network (enforced) >
+  site > network (default) > built-in default** (`resolved()`). On single-site this is exactly
+  "site > default" — behavior is unchanged.
+- **App ID** is disambiguated on subdirectory multisite (blogs sharing a host get `host-path`) so
+  the SDK queue/email config doesn't collide between blogs. Subdomain multisite + single-site keep
+  the host as before.
+- Per-request caches are flushed on `switch_blog` so network operations read blog-scoped values.
+
+### Tests
+- Unit tests for multisite resolution (network default, enforce, site override) + subdir app-id.
+
 ## [0.3.0] - 2026-06-13
 
 Configurable integration + bext cloud support.

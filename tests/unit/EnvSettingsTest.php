@@ -10,7 +10,10 @@
 
 defined( 'ABSPATH' ) || define( 'ABSPATH', __DIR__ );
 
-$GLOBALS['_bext_opts'] = array();
+$GLOBALS['_bext_opts']      = array();
+$GLOBALS['_bext_netopts']   = array();
+$GLOBALS['_bext_multisite'] = false;
+$GLOBALS['_bext_subdomain'] = false;
 
 if ( ! function_exists( 'get_option' ) ) {
 	function get_option( $k, $d = false ) {
@@ -28,7 +31,8 @@ if ( ! function_exists( 'get_option' ) ) {
 		return $v;
 	}
 	function home_url( $p = '/' ) {
-		return 'https://example.test' . $p;
+		$base = isset( $GLOBALS['_bext_home'] ) ? $GLOBALS['_bext_home'] : 'https://example.test';
+		return rtrim( $base, '/' ) . $p;
 	}
 	function wp_parse_url( $u, $c = -1 ) {
 		return parse_url( $u, $c );
@@ -44,6 +48,19 @@ if ( ! function_exists( 'get_option' ) ) {
 	}
 	function is_user_logged_in() {
 		return false;
+	}
+	function is_multisite() {
+		return ! empty( $GLOBALS['_bext_multisite'] );
+	}
+	function is_subdomain_install() {
+		return ! empty( $GLOBALS['_bext_subdomain'] );
+	}
+	function get_site_option( $k, $d = false ) {
+		return array_key_exists( $k, $GLOBALS['_bext_netopts'] ) ? $GLOBALS['_bext_netopts'][ $k ] : $d;
+	}
+	function update_site_option( $k, $v ) {
+		$GLOBALS['_bext_netopts'][ $k ] = $v;
+		return true;
 	}
 }
 
@@ -102,6 +119,45 @@ $set( array( 'mode' => 'cloud', 'cloud_url' => 'https://edge.example.com' ) );
 $check( ( new Env() )->is_behind_bext() === true, 'cloud mode ⇒ behind bext' );
 $set( array( 'mode' => 'off' ) );
 $check( ( new Env() )->is_behind_bext() === false, 'off mode ⇒ not behind bext' );
+
+// --- multisite layering ---
+$setnet = function ( array $s ) {
+	$GLOBALS['_bext_netopts']['bext_wp_network_settings'] = $s;
+};
+$GLOBALS['_bext_multisite'] = true;
+
+$set( array() );
+$setnet( array( 'mode' => 'cloud', 'cloud_url' => 'https://n.example' ) );
+$check( ( new Env() )->mode() === 'cloud', 'network default applies when no site setting' );
+
+$set( array( 'mode' => 'auto' ) );
+$setnet( array( 'mode' => 'cloud', 'cloud_url' => 'https://n.example' ) );
+$check( ( new Env() )->mode() === 'auto', 'site overrides network default (enforce off)' );
+
+$set( array( 'mode' => 'auto' ) );
+$setnet( array( 'mode' => 'cloud', 'cloud_url' => 'https://n.example', '_enforce' => 1 ) );
+$check( ( new Env() )->mode() === 'cloud', 'enforce: network overrides site' );
+$check( ( new Env() )->endpoint_base() === 'https://n.example', 'enforce: cloud_url from network' );
+
+$set( array( 'enable_cache' => 0 ) );
+$setnet( array( 'enable_cache' => 1 ) );
+$check( ( new Env() )->is_enabled( 'cache' ) === false, 'site disable wins when enforce off' );
+
+$set( array( 'enable_cache' => 1 ) );
+$setnet( array( 'enable_cache' => 0, '_enforce' => 1 ) );
+$check( ( new Env() )->is_enabled( 'cache' ) === false, 'network enforce disables module' );
+
+// subdirectory multisite ⇒ app_id disambiguated by path
+$set( array() );
+$setnet( array() );
+$GLOBALS['_bext_subdomain'] = false;
+$GLOBALS['_bext_home']      = 'https://example.test/blog2';
+$check( ( new Env() )->app_id() === 'example.test-blog2', 'subdir multisite app_id = host-path' );
+
+// reset for the constant test
+$GLOBALS['_bext_multisite'] = false;
+$GLOBALS['_bext_home']      = 'https://example.test';
+$setnet( array() );
 
 // --- constant overrides setting (defined last; constants are immutable) ---
 define( 'BEXT_WP_MODE', 'off' );

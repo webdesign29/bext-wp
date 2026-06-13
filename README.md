@@ -38,6 +38,7 @@ workers.
 | **Health** | Config checks, known-noisy-plugin detection, optional capture of recent PHP warnings. |
 | **Admin** | A wp-admin **Bext** dashboard + admin-bar status pill: integration status, purge log, Action Scheduler queue depth, health checks, server reachability. |
 | **Settings** | Configure everything from the UI — connection mode (local / **cloud**), endpoint + token, modules, cache behavior, SDK — no `wp-config` editing needed. |
+| **Multisite** | Network-admin settings (defaults + **Enforce**), a cross-site dashboard with per-site & all-sites purge, and subdirectory-aware purge/App-ID. See [docs/multisite.md](docs/multisite.md). |
 | **SDK** *(opt-in)* | Route `wp_mail` through bext's managed email send; enqueue background jobs onto a bext queue. Both fail open. |
 
 ## How it connects

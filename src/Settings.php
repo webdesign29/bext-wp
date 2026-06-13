@@ -138,6 +138,7 @@ class Settings {
 
 		$this->maybe_show_test_result();
 		$this->maybe_show_constant_notice();
+		$this->maybe_show_network_notice();
 
 		echo '<form method="post" action="options.php" class="bext-card" style="max-width:760px">';
 		settings_fields( self::GROUP );
@@ -224,6 +225,14 @@ class Settings {
 			! empty( $r['ok'] ) ? 'success' : 'error',
 			esc_html( (string) ( $r['msg'] ?? '' ) )
 		);
+	}
+
+	private function maybe_show_network_notice(): void {
+		if ( $this->env->network_enforced() ) {
+			echo '<div class="notice notice-warning"><p>Some settings are <strong>enforced at the network level</strong>' .
+				( current_user_can( 'manage_network_options' ) ? ' (<a href="' . esc_url( network_admin_url( 'admin.php?page=' . Network::PAGE ) ) . '">Network → Bext</a>)' : '' ) .
+				' and override the values below.</p></div>';
+		}
 	}
 
 	private function maybe_show_constant_notice(): void {

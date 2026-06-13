@@ -70,6 +70,12 @@ final class Plugin {
 
 		$this->env = new Env();
 
+		// Multisite: per-request caches are blog-scoped, so reset them whenever
+		// code switches the current blog (network purge loops, etc.).
+		if ( is_multisite() ) {
+			add_action( 'switch_blog', array( $this->env, 'flush_settings_cache' ) );
+		}
+
 		// Always-on: the settings UI, dashboard, and health diagnostics exist
 		// regardless of enablement so the operator can always (re)configure.
 		$always = array(
@@ -77,6 +83,9 @@ final class Plugin {
 			'admin'    => Admin::class,
 			'health'   => Health::class,
 		);
+		if ( is_multisite() ) {
+			$always['network'] = Network::class;
+		}
 		// Feature modules, gated by mode + constant + setting + filter.
 		$gated = array(
 			'cache' => Cache::class,

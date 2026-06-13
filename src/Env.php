@@ -25,6 +25,7 @@ class Env {
 
 	const DETECT_OPTION   = 'bext_wp_detected';
 	const SETTINGS_OPTION = 'bext_wp_settings';
+	const NETWORK_OPTION  = 'bext_wp_network_settings';
 	const PURGE_PATH      = '/__bext/cache/purge-proxy';
 
 	/** @var bool|null */
@@ -32,6 +33,9 @@ class Env {
 
 	/** @var array|null */
 	private $settings = null;
+
+	/** @var array|null */
+	private $network = null;
 
 	// ---------------------------------------------------------------------
 	// Settings
@@ -61,10 +65,78 @@ class Env {
 		return null === $v ? $default : (bool) $v;
 	}
 
-	/** Invalidate the per-request settings cache (after a save). */
+	/** Invalidate the per-request caches (after a save or a switch_to_blog). */
 	public function flush_settings_cache(): void {
 		$this->settings = null;
+		$this->network  = null;
 		$this->behind   = null;
+	}
+
+	// ---------------------------------------------------------------------
+	// Network (multisite) settings
+	// ---------------------------------------------------------------------
+
+	/** @return array<string,mixed> Network-wide settings (empty on single-site). */
+	public function network_settings(): array {
+		if ( null === $this->network ) {
+			if ( is_multisite() ) {
+				$opt           = get_site_option( self::NETWORK_OPTION, array() );
+				$this->network = is_array( $opt ) ? $opt : array();
+			} else {
+				$this->network = array();
+			}
+		}
+		return $this->network;
+	}
+
+	/**
+	 * @param string $key
+	 * @param mixed  $default
+	 * @return mixed
+	 */
+	public function network_setting( string $key, $default = null ) {
+		$n = $this->network_settings();
+		return array_key_exists( $key, $n ) ? $n[ $key ] : $default;
+	}
+
+	/** Are network settings enforced over per-site settings? (multisite only) */
+	public function network_enforced(): bool {
+		return is_multisite() && (bool) $this->network_setting( '_enforce', false );
+	}
+
+	/**
+	 * Resolve a setting with multisite layering:
+	 *   constant (handled by callers) > network(enforced) > site > network(default) > default.
+	 * On single-site this is exactly "site > default".
+	 *
+	 * @param string $key
+	 * @param mixed  $default
+	 * @return mixed
+	 */
+	public function resolved( string $key, $default = null ) {
+		$site = $this->setting( $key, null );
+
+		if ( ! is_multisite() ) {
+			return null === $site ? $default : $site;
+		}
+
+		$net = $this->network_setting( $key, null );
+
+		if ( $this->network_enforced() && null !== $net ) {
+			return $net;
+		}
+		if ( null !== $site ) {
+			return $site;
+		}
+		if ( null !== $net ) {
+			return $net;
+		}
+		return $default;
+	}
+
+	public function resolved_bool( string $key, bool $default ): bool {
+		$v = $this->resolved( $key, null );
+		return null === $v ? $default : (bool) $v;
 	}
 
 	/**
@@ -74,7 +146,7 @@ class Env {
 		if ( defined( 'BEXT_WP_MODE' ) && BEXT_WP_MODE ) {
 			$m = (string) BEXT_WP_MODE;
 		} else {
-			$m = (string) $this->setting( 'mode', 'auto' );
+			$m = (string) $this->resolved( 'mode', 'auto' );
 		}
 		return in_array( $m, array( 'auto', 'cloud', 'off' ), true ) ? $m : 'auto';
 	}
@@ -92,8 +164,7 @@ class Env {
 		if ( defined( $const ) && constant( $const ) ) {
 			return false;
 		}
-		$setting = $this->setting( 'enable_' . $module, null );
-		$default = null === $setting ? true : (bool) $setting;
+		$default = $this->resolved_bool( 'enable_' . $module, true );
 
 		/** @param bool $default Whether the module is enabled. */
 		return (bool) apply_filters( "bext/enable_{$module}", $default );
@@ -103,7 +174,7 @@ class Env {
 		if ( defined( 'BEXT_WP_SDK_EMAIL' ) ) {
 			$on = (bool) BEXT_WP_SDK_EMAIL;
 		} else {
-			$on = $this->setting_bool( 'sdk_email', false );
+			$on = $this->resolved_bool( 'sdk_email', false );
 		}
 		return $on && apply_filters( 'bext/enable_sdk_email', true );
 	}
@@ -112,27 +183,27 @@ class Env {
 		if ( defined( 'BEXT_WP_SDK_JOBS' ) ) {
 			$on = (bool) BEXT_WP_SDK_JOBS;
 		} else {
-			$on = $this->setting_bool( 'sdk_jobs', false );
+			$on = $this->resolved_bool( 'sdk_jobs', false );
 		}
 		return $on && apply_filters( 'bext/enable_sdk_jobs', true );
 	}
 
 	public function purge_on_save_enabled(): bool {
-		return $this->setting_bool( 'purge_on_save', true );
+		return $this->resolved_bool( 'purge_on_save', true );
 	}
 
 	public function capture_warnings_enabled(): bool {
 		if ( defined( 'BEXT_WP_CAPTURE_WARNINGS' ) ) {
 			return (bool) BEXT_WP_CAPTURE_WARNINGS;
 		}
-		if ( $this->setting_bool( 'capture_warnings', false ) ) {
+		if ( $this->resolved_bool( 'capture_warnings', false ) ) {
 			return true;
 		}
 		return defined( 'WP_DEBUG' ) && WP_DEBUG;
 	}
 
 	public function anon_cache_control(): string {
-		return (string) $this->setting( 'anon_cache_control', '' );
+		return (string) $this->resolved( 'anon_cache_control', '' );
 	}
 
 	// ---------------------------------------------------------------------
@@ -196,8 +267,21 @@ class Env {
 		if ( defined( 'BEXT_WP_APP_ID' ) && BEXT_WP_APP_ID ) {
 			return (string) BEXT_WP_APP_ID;
 		}
-		$s = (string) $this->setting( 'app_id', '' );
-		return '' !== $s ? $s : $this->canonical_host();
+		$s = (string) $this->resolved( 'app_id', '' );
+		if ( '' !== $s ) {
+			return $s;
+		}
+		$host = $this->canonical_host();
+		// Subdirectory multisite blogs share a host — disambiguate by path so the
+		// SDK queue/email config doesn't collide between blogs. (Subdomain
+		// multisite + single-site already have a unique host.)
+		if ( is_multisite() && ! is_subdomain_install() ) {
+			$path = trim( $this->home_path(), '/' );
+			if ( '' !== $path ) {
+				return $host . '-' . str_replace( '/', '-', $path );
+			}
+		}
+		return $host;
 	}
 
 	/** Does the current request imply a personalized (un-cacheable) response? */
@@ -248,14 +332,14 @@ class Env {
 		if ( defined( 'BEXT_WP_CLOUD_URL' ) && BEXT_WP_CLOUD_URL ) {
 			return (string) BEXT_WP_CLOUD_URL;
 		}
-		return (string) $this->setting( 'cloud_url', '' );
+		return (string) $this->resolved( 'cloud_url', '' );
 	}
 
 	public function cloud_token(): string {
 		if ( defined( 'BEXT_WP_CLOUD_TOKEN' ) && BEXT_WP_CLOUD_TOKEN ) {
 			return (string) BEXT_WP_CLOUD_TOKEN;
 		}
-		return (string) $this->setting( 'cloud_token', '' );
+		return (string) $this->resolved( 'cloud_token', '' );
 	}
 
 	/** Auth + host headers appropriate to the current mode. */
