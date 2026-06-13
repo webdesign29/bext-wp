@@ -102,10 +102,12 @@ class Network {
 		$count   = 0;
 
 		if ( $blog_id > 0 ) {
-			$count += (int) $this->purge_blog( $blog_id );
+			// Single site: blocking, so we can confirm the result.
+			$count += (int) $this->purge_blog( $blog_id, true );
 		} else {
+			// All sites: non-blocking, so N sites can't stall the request for N×5s.
 			foreach ( $this->site_ids() as $id ) {
-				$count += (int) $this->purge_blog( $id );
+				$count += (int) $this->purge_blog( $id, false );
 			}
 		}
 
@@ -114,24 +116,34 @@ class Network {
 	}
 
 	/**
-	 * Purge a single blog's entire cache. Returns 1 on a 200 response.
+	 * Purge a single blog's entire cache. switch_to_blog is exception-safe; the
+	 * blog id is validated to exist first.
 	 *
-	 * @param int $blog_id
+	 * @param int  $blog_id
+	 * @param bool $blocking Wait for the response (confirm) vs fire-and-forget.
+	 * @return int 1 if dispatched (blocking: only on a 200), else 0.
 	 */
-	private function purge_blog( int $blog_id ): int {
-		switch_to_blog( $blog_id );
-		$this->env->flush_settings_cache(); // belt-and-braces (switch_blog also flushes).
-		$ok = 0;
-		if ( $this->env->is_behind_bext() ) {
-			$body = array(
-				'host'     => $this->env->canonical_host(),
-				'paths'    => array(),
-				'prefixes' => array( $this->env->home_path() ),
-			);
-			$res = $this->env->purge_proxy( $body, true );
-			$ok  = ( is_array( $res ) && 200 === $res['code'] ) ? 1 : 0;
+	private function purge_blog( int $blog_id, bool $blocking = false ): int {
+		if ( ! get_site( $blog_id ) ) {
+			return 0;
 		}
-		restore_current_blog();
+		switch_to_blog( $blog_id );
+		$ok = 0;
+		try {
+			if ( $this->env->is_behind_bext() ) {
+				$res = $this->env->purge_proxy(
+					array(
+						'host'     => $this->env->canonical_host(),
+						'paths'    => array(),
+						'prefixes' => array( $this->env->home_path() ),
+					),
+					$blocking
+				);
+				$ok = $blocking ? ( ( is_array( $res ) && 200 === $res['code'] ) ? 1 : 0 ) : 1;
+			}
+		} finally {
+			restore_current_blog();
+		}
 		return $ok;
 	}
 
@@ -228,17 +240,23 @@ class Network {
 		$purge_all = wp_nonce_url( add_query_arg( 'action', 'bext_network_purge', admin_url( 'admin-post.php' ) ), 'bext_network_purge' );
 		echo '<p><a class="button button-primary" href="' . esc_url( $purge_all ) . '" onclick="return confirm(\'Purge the bext cache for ALL sites?\')">Purge all sites</a></p>';
 
+		// Build admin-post URL in the network/main-site context, before any switch.
+		$post_url = admin_url( 'admin-post.php' );
+
 		echo '<table class="widefat striped"><thead><tr><th>Site</th><th>bext</th><th>Mode</th><th>Last purge</th><th></th></tr></thead><tbody>';
 		foreach ( $ids as $id ) {
 			switch_to_blog( $id );
-			$home     = home_url( '/' );
-			$detected = (bool) get_option( Env::DETECT_OPTION );
-			$settings = get_option( Env::SETTINGS_OPTION, array() );
-			$mode     = is_array( $settings ) && isset( $settings['mode'] ) ? (string) $settings['mode'] : '(default)';
-			$log      = get_option( Cache::LOG_OPTION, array() );
-			$last     = ( is_array( $log ) && isset( $log[0]['time'] ) ) ? human_time_diff( (int) $log[0]['time'] ) . ' ago' : '—';
-			$purge1   = wp_nonce_url( add_query_arg( array( 'action' => 'bext_network_purge', 'blog_id' => $id ), admin_url( 'admin-post.php' ) ), 'bext_network_purge' );
-			restore_current_blog();
+			try {
+				$home     = home_url( '/' );
+				$detected = (bool) get_option( Env::DETECT_OPTION );
+				$settings = get_option( Env::SETTINGS_OPTION, array() );
+				$mode     = is_array( $settings ) && isset( $settings['mode'] ) ? (string) $settings['mode'] : '(default)';
+				$log      = get_option( Cache::LOG_OPTION, array() );
+				$last     = ( is_array( $log ) && isset( $log[0]['time'] ) ) ? human_time_diff( (int) $log[0]['time'] ) . ' ago' : '—';
+			} finally {
+				restore_current_blog();
+			}
+			$purge1 = wp_nonce_url( add_query_arg( array( 'action' => 'bext_network_purge', 'blog_id' => $id ), $post_url ), 'bext_network_purge' );
 
 			$dot = $detected ? '<span class="bext-dot ok"></span>' : '<span class="bext-dot warn"></span>';
 			echo '<tr>'

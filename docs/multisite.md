@@ -24,6 +24,11 @@ So you can:
 - set sensible **network defaults** that new sites inherit, while letting each site override; or
 - **Enforce** to lock configuration network-wide.
 
+> **Note:** once a site **saves** its own *Bext → Settings* page, its choices are stored
+> explicitly and take precedence over non-enforced network defaults (a saved setting is a real
+> value, not "inherit"). To push a value to sites that have already configured themselves, turn on
+> **Enforce**.
+
 When enforcement is on, the per-site **Bext → Settings** page shows a notice that some values are
 managed at the network level.
 
@@ -55,7 +60,7 @@ wp --url=https://example.com/blog-a/ bext purge /hello/
 ```
 
 (`--url` here is WP-CLI's global flag selecting the site; the bext purge target is the positional
-path — see [WP-CLI](WP-CLI).)
+path — see [WP-CLI](https://github.com/webdesign29/bext-wp/wiki/WP-CLI).)
 
 ## Uninstall
 

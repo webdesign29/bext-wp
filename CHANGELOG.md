@@ -3,6 +3,32 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.4.1] - 2026-06-13
+
+Audit follow-up — bug fixes & hardening from a multi-agent review.
+
+### Fixed
+- **`bext/enqueue` double-fire**: actions and filters share WordPress's callback registry, so
+  registering the fire-and-forget action and the id-returning filter on the same tag made
+  `do_action('bext/enqueue', …)` enqueue a second, malformed job. The filter form is now
+  **`bext/enqueue_job`** (the `bext/enqueue` action is unchanged).
+- **Network cross-site purge**: "Purge all sites" is now non-blocking (no N×5s stall on large
+  networks); `blog_id` is validated against `get_site()`; `switch_to_blog()` is exception-safe
+  (`try/finally`); per-row purge URLs are built in the network context, not inside the switch.
+- **uninstall.php** now also removes `bext_wp_settings` and the `bext_wp_network_settings` network
+  option, and cleans **all** sites (no 100-site cap).
+- SDK email: bound total attachment size (default 15 MB, filterable) — falls back to native
+  `wp_mail` rather than risk an OOM on the `pre_wp_mail` path.
+- Post-save purge only queues Yoast/Rank Math sitemaps when those plugins are active.
+- Corrected a stale dashboard string and the integration test (both referenced the abandoned
+  cache-purge port instead of `/__bext/cache/purge-proxy`); fixed a broken docs link.
+
+### Changed
+- `bin/deploy-fleet.sh`: excludes docs/dev files from deployed sites (keeps `LICENSE`); refuses a
+  fleet-wide `--remove` without `--site=` or `--all`.
+- CI: the WPCS job is honestly `continue-on-error` (advisory) instead of masking failures.
+- More tests: auto-mode bext detection (param, sticky flag, refresh header).
+
 ## [0.4.0] - 2026-06-13
 
 WordPress Multisite features & compatibility.

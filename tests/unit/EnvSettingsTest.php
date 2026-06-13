@@ -120,6 +120,28 @@ $check( ( new Env() )->is_behind_bext() === true, 'cloud mode ⇒ behind bext' )
 $set( array( 'mode' => 'off' ) );
 $check( ( new Env() )->is_behind_bext() === false, 'off mode ⇒ not behind bext' );
 
+// --- auto-mode detection (the real-world default path) ---
+$set( array() ); // mode = auto
+unset( $_SERVER['BEXT_SERVER'], $_SERVER['HTTP_X_BEXT_CACHE_REFRESH'] );
+delete_option( 'bext_wp_detected' );
+$check( ( new Env() )->is_behind_bext() === false, 'auto: not behind bext without a signal' );
+
+$_SERVER['BEXT_SERVER'] = 'bext/9.9';
+$check( ( new Env() )->is_behind_bext() === true, 'auto: BEXT_SERVER param ⇒ behind bext' );
+$check( (bool) get_option( 'bext_wp_detected' ) === true, 'auto: signal sets the sticky detected flag' );
+$check( ( new Env() )->bext_version() === 'bext/9.9', 'bext_version from param' );
+
+unset( $_SERVER['BEXT_SERVER'] ); // param gone, but sticky flag remains
+$check( ( new Env() )->is_behind_bext() === true, 'auto: sticky flag keeps detection true' );
+$check( ( new Env() )->bext_version() === '', 'bext_version empty without the param' );
+
+// x-bext-cache-refresh header is also a signal
+delete_option( 'bext_wp_detected' );
+$_SERVER['HTTP_X_BEXT_CACHE_REFRESH'] = '1';
+$check( ( new Env() )->is_behind_bext() === true, 'auto: x-bext-cache-refresh ⇒ behind bext' );
+unset( $_SERVER['HTTP_X_BEXT_CACHE_REFRESH'] );
+delete_option( 'bext_wp_detected' );
+
 // --- multisite layering ---
 $setnet = function ( array $s ) {
 	$GLOBALS['_bext_netopts']['bext_wp_network_settings'] = $s;

@@ -36,11 +36,14 @@ class SDK {
 			add_filter( 'pre_wp_mail', array( $this, 'send_mail' ), 10, 2 );
 		}
 
-		// Enqueue shims:
-		//   do_action( 'bext/enqueue', $name, $payload, $delay )           — fire-and-forget
-		//   apply_filters( 'bext/enqueue', null, $name, $payload, $delay ) — returns the job id
+		// Enqueue shims. NOTE: these MUST be on different tags — WordPress shares
+		// one callback registry for actions and filters, so registering both on
+		// `bext/enqueue` would make do_action() also invoke the filter callback
+		// (with shifted args) and enqueue a second, malformed job.
+		//   do_action( 'bext/enqueue', $name, $payload, $delay )               — fire-and-forget
+		//   apply_filters( 'bext/enqueue_job', null, $name, $payload, $delay ) — returns the job id
 		add_action( 'bext/enqueue', array( $this, 'enqueue_action' ), 10, 3 );
-		add_filter( 'bext/enqueue', array( $this, 'enqueue_filter' ), 10, 4 );
+		add_filter( 'bext/enqueue_job', array( $this, 'enqueue_filter' ), 10, 4 );
 	}
 
 	private function email_enabled(): bool {
@@ -107,7 +110,16 @@ class SDK {
 				$payload['bcc'] = array_map( 'trim', explode( ',', $headers['bcc'] ) );
 			}
 
-			$attachments = $this->build_attachments( $atts['attachments'] ?? array() );
+			// Bound attachment size: base64 inflates by ~33% and is held in memory.
+			// If the total is large, fall back to native wp_mail (which streams
+			// from disk) rather than risk an uncatchable OOM on this request.
+			$atts_in   = $atts['attachments'] ?? array();
+			$max_bytes = (int) apply_filters( 'bext/sdk_email_max_attachment_bytes', 15 * 1024 * 1024 );
+			if ( $this->attachments_total_bytes( $atts_in ) > $max_bytes ) {
+				do_action( 'bext/sdk_email_fallback', 'attachments-too-large', $atts );
+				return $short;
+			}
+			$attachments = $this->build_attachments( $atts_in );
 			if ( ! empty( $attachments ) ) {
 				$payload['attachments'] = $attachments;
 			}
@@ -141,7 +153,7 @@ class SDK {
 	}
 
 	/**
-	 * Filter wrapper: apply_filters( 'bext/enqueue', null, $name, $payload, $delay )
+	 * Filter wrapper: apply_filters( 'bext/enqueue_job', null, $name, $payload, $delay )
 	 * → returns the job id (or the passed-through default on failure).
 	 *
 	 * @param mixed    $default Returned if enqueue fails/disabled.
@@ -210,6 +222,23 @@ class SDK {
 			$out[ strtolower( trim( $name ) ) ] = trim( $value );
 		}
 		return $out;
+	}
+
+	/**
+	 * Total on-disk size of the given attachment paths (readable ones only).
+	 *
+	 * @param string|string[] $attachments File paths.
+	 */
+	private function attachments_total_bytes( $attachments ): int {
+		$total = 0;
+		foreach ( (array) $attachments as $path ) {
+			$path = (string) $path;
+			if ( '' !== $path && @is_readable( $path ) ) {
+				$size   = @filesize( $path );
+				$total += is_int( $size ) ? $size : 0;
+			}
+		}
+		return $total;
 	}
 
 	/**

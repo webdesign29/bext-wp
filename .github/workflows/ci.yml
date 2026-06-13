@@ -32,8 +32,11 @@ jobs:
           done
 
   phpcs:
-    name: WordPress coding standards
+    name: WordPress coding standards (advisory)
     runs-on: ubuntu-latest
+    # Advisory: reports WPCS issues without failing the build. The check's own
+    # status reflects reality (no `|| true` masking it).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Set up PHP
@@ -45,4 +48,4 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress
       - name: Run phpcs
-        run: vendor/bin/phpcs -q || true   # advisory until the codebase is fully WPCS-clean
+        run: vendor/bin/phpcs -q

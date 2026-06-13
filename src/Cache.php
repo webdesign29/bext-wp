@@ -254,10 +254,15 @@ class Cache {
 				$paths[] = $this->url_to_path( $sitemap );
 			}
 		}
-		// Common third-party sitemap names (Yoast / RankMath), under the install base.
-		$base    = $this->env->home_path();
-		$paths[] = $base . 'sitemap_index.xml';
-		$paths[] = $base . 'sitemap.xml';
+		// Third-party sitemaps, under the install base — only when that plugin is
+		// active (avoids padding every purge with paths that are never cached).
+		$base = $this->env->home_path();
+		if ( defined( 'WPSEO_VERSION' ) ) {
+			$paths[] = $base . 'sitemap_index.xml'; // Yoast SEO
+		}
+		if ( class_exists( 'RankMath' ) ) {
+			$paths[] = $base . 'sitemap_index.xml'; // Rank Math
+		}
 
 		$paths[] = $this->url_to_path( rest_url( 'wp/v2/posts' ) );
 

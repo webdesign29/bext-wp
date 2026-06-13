@@ -148,14 +148,15 @@ class Health {
 			}
 		}
 
-		// open_basedir (informational — affects file ops + port-file discovery).
+		// open_basedir (informational). bext-wp talks to bext over loopback HTTP
+		// (no file-system access), so an active restriction doesn't affect it.
 		$obd = ini_get( 'open_basedir' );
 		if ( $obd ) {
 			$checks[] = array(
 				'id'     => 'open_basedir',
 				'label'  => 'open_basedir restriction',
 				'status' => 'ok',
-				'detail' => 'Active: ' . $obd . ' (purge uses the BEXT_CACHE_PURGE_PORT param, not file reads).',
+				'detail' => 'Active (bext is reached over loopback HTTP, so this does not affect purging).',
 			);
 		}
 

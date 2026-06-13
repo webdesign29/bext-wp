@@ -24,6 +24,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRY=0
 LIST=0
 REMOVE=0
+ALL=0
 FILTER=""
 
 for arg in "$@"; do
@@ -31,11 +32,18 @@ for arg in "$@"; do
 		--dry-run) DRY=1 ;;
 		--list) LIST=1 ;;
 		--remove) REMOVE=1 ;;
+		--all) ALL=1 ;;
 		--site=*) FILTER="${arg#*=}" ;;
 		-h|--help) sed -n '2,30p' "$0"; exit 0 ;;
 		*) echo "unknown arg: $arg" >&2; exit 2 ;;
 	esac
 done
+
+# Guard against an accidental fleet-wide removal: require --site or --all.
+if [ "$REMOVE" -eq 1 ] && [ -z "$FILTER" ] && [ "$ALL" -eq 0 ] && [ "$DRY" -eq 0 ]; then
+	echo "Refusing to remove bext-wp from ALL sites without --site=<match> or --all." >&2
+	exit 2
+fi
 
 # Discover WP sites: any */public/wp-config.php under /home.
 mapfile -t PUBDIRS < <(ls -d /home/*/*/public/wp-config.php 2>/dev/null | xargs -r -n1 dirname | sort -u)
@@ -84,15 +92,23 @@ for pub in "${PUBDIRS[@]}"; do
 
 	mkdir -p "$mu/bext-wp"
 
-	# Copy only runtime files (no .git, tests, dev tooling).
+	# Copy only runtime files (no .git, tests, dev tooling, docs). LICENSE is kept.
 	rsync -a --delete \
 		--exclude '.git' \
 		--exclude '.github' \
 		--exclude 'tests' \
 		--exclude 'bin' \
+		--exclude 'docs' \
 		--exclude 'node_modules' \
 		--exclude 'vendor' \
 		--exclude 'mu-loader.php' \
+		--exclude 'composer.json' \
+		--exclude 'composer.lock' \
+		--exclude 'phpcs.xml' \
+		--exclude '.gitignore' \
+		--exclude 'CONTRIBUTING.md' \
+		--exclude 'CHANGELOG.md' \
+		--exclude 'README.md' \
 		--exclude '*.dist' \
 		"$REPO"/ "$mu/bext-wp/"
 

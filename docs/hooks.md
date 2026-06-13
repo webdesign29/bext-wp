@@ -18,7 +18,7 @@ All hooks are namespaced `bext/`.
 | `bext/as_time_limit` | `int` | `min(20,…)` | Action Scheduler per-run time limit (s). |
 | `bext/system_cron_expected` | `bool` | `DISABLE_WP_CRON` | Whether a system cron drives Action Scheduler. |
 | `bext/health_checks` | `array $checks` | built-in | Add/modify dashboard health checks. |
-| `bext/enqueue` | `mixed $default, string $name, mixed $payload, int|null $delay` | `$default` | **Filter form** — returns the job id. |
+| `bext/enqueue_job` | `mixed $default, string $name, mixed $payload, int|null $delay` | `$default` | **Filter form** — returns the job id. |
 
 ```php
 // Only purge the permalink + home for a post, nothing else:
@@ -27,7 +27,7 @@ add_filter( 'bext/purge_urls_for_post', function ( $paths, $post_id ) {
 }, 10, 2 );
 
 // Enqueue a job and get its id:
-$id = apply_filters( 'bext/enqueue', null, 'emails', array( 'to' => 'a@b.co' ) );
+$id = apply_filters( 'bext/enqueue_job', null, 'emails', array( 'to' => 'a@b.co' ) );
 ```
 
 ## Actions
