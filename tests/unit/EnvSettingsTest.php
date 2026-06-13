@@ -87,6 +87,15 @@ $check( ( new Env() )->mode() === 'cloud', 'mode from setting = cloud' );
 $set( array( 'mode' => 'bogus' ) );
 $check( ( new Env() )->mode() === 'auto', 'invalid mode falls back to auto' );
 
+// mode() is memoized per-instance (perf); flush_settings_cache re-reads.
+$set( array( 'mode' => 'auto' ) );
+$e = new Env();
+$check( $e->mode() === 'auto', 'mode memo: first read' );
+$set( array( 'mode' => 'cloud' ) );
+$check( $e->mode() === 'auto', 'mode memo: value cached within the instance' );
+$e->flush_settings_cache();
+$check( $e->mode() === 'cloud', 'mode memo: re-read after flush' );
+
 // --- endpoint_base() ---
 $set( array( 'mode' => 'auto' ) );
 $check( ( new Env() )->endpoint_base() === 'http://127.0.0.1', 'auto → loopback base' );

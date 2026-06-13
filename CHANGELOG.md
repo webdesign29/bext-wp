@@ -3,6 +3,26 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.4.2] - 2026-06-13
+
+Performance + tests.
+
+### Performance
+- The admin-only modules (Settings, Network, and Health when warning-capture is off) are no longer
+  booted on **front-end requests** — the hot path bext serves on a cache miss. They load in
+  admin/CLI contexts (where they're needed; `wp bext doctor` still works under WP-CLI). Saves
+  object construction + hook registration on every anonymous render.
+- `Env::mode()` is memoized per request (it's consulted by several modules at boot).
+
+### Tests
+- New `tests/bootstrap.php` with a faithful action/filter registry (actions + filters share one
+  registry, like WordPress).
+- `SdkEnqueueTest` locks the v0.4.1 fix: `do_action('bext/enqueue')` enqueues exactly once (no
+  double-fire) and the filter form lives on `bext/enqueue_job`.
+- `CachePathsTest` (url_to_path / normalize_path / home_path incl. subdirectory installs),
+  `PersonalizationTest` (cookie-based personalization detection), and a `mode()` memoization check.
+- 72 assertions across 5 files (was ~22 across 2).
+
 ## [0.4.1] - 2026-06-13
 
 Audit follow-up — bug fixes & hardening from a multi-agent review.

@@ -37,6 +37,9 @@ class Env {
 	/** @var array|null */
 	private $network = null;
 
+	/** @var string|null */
+	private $mode = null;
+
 	// ---------------------------------------------------------------------
 	// Settings
 	// ---------------------------------------------------------------------
@@ -70,6 +73,7 @@ class Env {
 		$this->settings = null;
 		$this->network  = null;
 		$this->behind   = null;
+		$this->mode     = null;
 	}
 
 	// ---------------------------------------------------------------------
@@ -143,12 +147,16 @@ class Env {
 	 * Connection mode: 'auto' (loopback), 'cloud' (remote endpoint), or 'off'.
 	 */
 	public function mode(): string {
+		if ( null !== $this->mode ) {
+			return $this->mode;
+		}
 		if ( defined( 'BEXT_WP_MODE' ) && BEXT_WP_MODE ) {
 			$m = (string) BEXT_WP_MODE;
 		} else {
 			$m = (string) $this->resolved( 'mode', 'auto' );
 		}
-		return in_array( $m, array( 'auto', 'cloud', 'off' ), true ) ? $m : 'auto';
+		$this->mode = in_array( $m, array( 'auto', 'cloud', 'off' ), true ) ? $m : 'auto';
+		return $this->mode;
 	}
 
 	/**

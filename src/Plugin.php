@@ -76,15 +76,27 @@ final class Plugin {
 			add_action( 'switch_blog', array( $this->env, 'flush_settings_cache' ) );
 		}
 
-		// Always-on: the settings UI, dashboard, and health diagnostics exist
-		// regardless of enablement so the operator can always (re)configure.
-		$always = array(
-			'settings' => Settings::class,
-			'admin'    => Admin::class,
-			'health'   => Health::class,
-		);
-		if ( is_multisite() ) {
-			$always['network'] = Network::class;
+		// Boot the admin UI only where it can actually do something — admin
+		// requests (incl. admin-ajax/admin-post) and WP-CLI. Anonymous front-end
+		// renders (the hot path that bext serves on a cache miss) skip Settings,
+		// Network, and (usually) Health entirely.
+		$want_admin_ui = is_admin() || ( defined( 'WP_CLI' ) && WP_CLI );
+
+		// Admin owns the front-end admin-bar pill (logged-in users), so it's
+		// always booted — its admin-only hooks simply never fire on the front end.
+		$always = array( 'admin' => Admin::class );
+
+		if ( $want_admin_ui ) {
+			$always['settings'] = Settings::class;
+			if ( is_multisite() ) {
+				$always['network'] = Network::class;
+			}
+		}
+
+		// Health is needed in admin/CLI (dashboard + `wp bext doctor`), and on
+		// the front end only when warning capture is on (it must hook early).
+		if ( $want_admin_ui || $this->env->capture_warnings_enabled() ) {
+			$always['health'] = Health::class;
 		}
 		// Feature modules, gated by mode + constant + setting + filter.
 		$gated = array(
