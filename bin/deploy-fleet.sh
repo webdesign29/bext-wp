@@ -93,7 +93,8 @@ for pub in "${PUBDIRS[@]}"; do
 	mkdir -p "$mu/bext-wp"
 
 	# Copy only runtime files (no .git, tests, dev tooling, docs). LICENSE is kept.
-	rsync -a --delete \
+	# --delete-excluded also removes previously-deployed excluded files from dest.
+	rsync -a --delete --delete-excluded \
 		--exclude '.git' \
 		--exclude '.github' \
 		--exclude 'tests' \
