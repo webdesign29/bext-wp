@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint:
+    name: PHP lint (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.1', '8.3' ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Lint all PHP files
+        run: |
+          find . -path ./vendor -prune -o -name '*.php' -print0 \
+            | xargs -0 -n1 -P4 php -l
+
+  phpcs:
+    name: WordPress coding standards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+          tools: composer
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+      - name: Run phpcs
+        run: vendor/bin/phpcs -q || true   # advisory until the codebase is fully WPCS-clean

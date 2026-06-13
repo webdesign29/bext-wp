@@ -1,0 +1,120 @@
+/* Bext for WordPress — admin dashboard */
+
+.bext-wrap .bext-ver {
+	font-size: 12px;
+	color: #646970;
+	font-weight: 400;
+	vertical-align: middle;
+}
+
+.bext-wrap h1 .dashicons {
+	font-size: 28px;
+	width: 28px;
+	height: 28px;
+	vertical-align: text-bottom;
+}
+
+.bext-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	padding: 16px 20px;
+	margin: 16px 0;
+	max-width: 920px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.bext-card h2 {
+	margin-top: 0;
+	font-size: 15px;
+	border-bottom: 1px solid #f0f0f1;
+	padding-bottom: 8px;
+}
+
+.bext-card h3 {
+	font-size: 13px;
+	margin: 16px 0 8px;
+}
+
+table.bext-kv {
+	border-collapse: collapse;
+}
+
+table.bext-kv th {
+	text-align: left;
+	font-weight: 600;
+	padding: 5px 24px 5px 0;
+	color: #50575e;
+	vertical-align: top;
+	white-space: nowrap;
+}
+
+table.bext-kv td {
+	padding: 5px 0;
+}
+
+.bext-pill {
+	display: inline-block;
+	padding: 1px 9px;
+	border-radius: 10px;
+	font-size: 12px;
+	font-weight: 600;
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+.bext-pill.ok {
+	background: #edfaef;
+	color: #1a7f37;
+}
+
+.bext-pill.bad {
+	background: #fcebec;
+	color: #b32d2e;
+}
+
+.bext-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #c3c4c7;
+}
+
+.bext-dot.ok {
+	background: #46b450;
+}
+
+.bext-dot.warn {
+	background: #dba617;
+}
+
+.bext-dot.bad {
+	background: #dc3232;
+}
+
+.bext-muted {
+	color: #646970;
+}
+
+.bext-mono,
+.bext-pre {
+	font-family: Menlo, Consolas, monospace;
+	font-size: 12px;
+}
+
+.bext-pre {
+	background: #f6f7f7;
+	border: 1px solid #e0e0e0;
+	border-radius: 4px;
+	padding: 10px;
+	max-width: 880px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+table.bext-log td.bext-mono {
+	max-width: 480px;
+	overflow-wrap: anywhere;
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<ruleset name="bext-wp">
+	<description>Coding standards for bext-wp.</description>
+
+	<file>bext-wp.php</file>
+	<file>mu-loader.php</file>
+	<file>src</file>
+	<file>cli</file>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<config name="testVersion" value="7.4-"/>
+	<config name="minimum_wp_version" value="5.8"/>
+
+	<rule ref="WordPress">
+		<!-- The plugin talks to bext over loopback; these are intentional. -->
+		<exclude name="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents"/>
+		<exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fopen"/>
+	</rule>
+
+	<rule ref="PHPCompatibilityWP"/>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="bext"/>
+				<element value="Bext\WP"/>
+				<element value="BEXT_WP"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

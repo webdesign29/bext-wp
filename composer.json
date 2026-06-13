@@ -1,0 +1,38 @@
+{
+	"name": "webdesign29/bext-wp",
+	"description": "Integrate WordPress with the bext server: purge-on-change edge caching, Action Scheduler taming, personalization-safe cache headers, an operator dashboard, and an optional SDK bridge.",
+	"type": "wordpress-muplugin",
+	"license": "GPL-2.0-or-later",
+	"keywords": ["wordpress", "bext", "cache", "reverse-proxy", "action-scheduler"],
+	"homepage": "https://github.com/webdesign29/bext-wp",
+	"authors": [
+		{
+			"name": "webdesign29",
+			"homepage": "https://bext.dev"
+		}
+	],
+	"require": {
+		"php": ">=7.4"
+	},
+	"require-dev": {
+		"squizlabs/php_codesniffer": "^3.9",
+		"wp-coding-standards/wpcs": "^3.0",
+		"phpcompatibility/phpcompatibility-wp": "^2.1"
+	},
+	"autoload": {
+		"psr-4": {
+			"Bext\\WP\\": "src/",
+			"Bext\\WP\\CLI\\": "cli/"
+		}
+	},
+	"scripts": {
+		"lint": "find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l",
+		"phpcs": "phpcs",
+		"phpcbf": "phpcbf"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
+	}
+}
