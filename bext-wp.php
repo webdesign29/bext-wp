@@ -3,7 +3,7 @@
  * Plugin Name:       Bext for WordPress
  * Plugin URI:        https://github.com/webdesign29/bext-wp
  * Description:        Integrates WordPress with the bext server: purge-on-change edge caching, Action Scheduler taming, personalization-safe cache headers, an operator dashboard, and an optional SDK bridge (email/jobs).
- * Version:           0.4.2
+ * Version:           0.4.3
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            webdesign29
@@ -25,9 +25,12 @@ if ( defined( 'BEXT_WP_VERSION' ) ) {
 	return;
 }
 
-define( 'BEXT_WP_VERSION', '0.4.2' );
+define( 'BEXT_WP_VERSION', '0.4.3' );
 define( 'BEXT_WP_FILE', __FILE__ );
 define( 'BEXT_WP_DIR', __DIR__ );
+// Must-use installs can't self-update through wp-admin (the fleet deploy script
+// handles those); the Updater only registers for normal-plugin installs.
+define( 'BEXT_WP_IS_MU', false !== strpos( __DIR__, 'mu-plugins' ) );
 define(
 	'BEXT_WP_URL',
 	untrailingslashit(

@@ -40,6 +40,7 @@ workers.
 | **Settings** | Configure everything from the UI — connection mode (local / **cloud**), endpoint + token, modules, cache behavior, SDK — no `wp-config` editing needed. |
 | **Multisite** | Network-admin settings (defaults + **Enforce**), a cross-site dashboard with per-site & all-sites purge, and subdirectory-aware purge/App-ID. See [docs/multisite.md](docs/multisite.md). |
 | **SDK** *(opt-in)* | Route `wp_mail` through bext's managed email send; enqueue background jobs onto a bext queue. Both fail open. |
+| **Auto-update** | Self-hosted updates for normal-plugin installs — "update available" + one-click update from a manifest, like a wordpress.org plugin (must-use installs update via `deploy-fleet.sh`). |
 
 ## How it connects
 

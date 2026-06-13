@@ -3,6 +3,24 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.4.3] - 2026-06-13
+
+Self-hosted auto-updates.
+
+### Added
+- **Automatic updates** for normal-plugin installs. The plugin checks a self-hosted manifest
+  (`https://wp-plugins.inklura.fr/api/update?slug=bext-wp`) and, when a newer release is published,
+  shows "update available" on the Plugins screen and supports one-click update — just like a
+  wordpress.org plugin. Powers the "View details" modal too. The remote check is cached 12 h.
+- Update packages are GitHub release assets (`releases/latest/download/bext-wp.zip`); the updater
+  normalises the extracted folder so updates install back into `wp-content/plugins/bext-wp/`.
+- `bin/build-zip.sh` packages a release ZIP. Manifest URL is overridable via
+  `BEXT_WP_UPDATE_URL` / the `bext/update_manifest_url` filter.
+- Unit tests for the version-compare + transient/`plugins_api` logic.
+
+### Notes
+- Must-use installs are excluded (they update via `bin/deploy-fleet.sh`).
+
 ## [0.4.2] - 2026-06-13
 
 Performance + tests.

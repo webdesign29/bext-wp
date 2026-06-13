@@ -98,6 +98,13 @@ final class Plugin {
 		if ( $want_admin_ui || $this->env->capture_warnings_enabled() ) {
 			$always['health'] = Health::class;
 		}
+
+		// Auto-updates for normal-plugin installs only (must-use installs update
+		// via bin/deploy-fleet.sh). Needed in admin/CLI and during cron update
+		// checks — not on the anonymous front-end hot path.
+		if ( ! BEXT_WP_IS_MU && ( $want_admin_ui || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) ) ) {
+			$always['updater'] = Updater::class;
+		}
 		// Feature modules, gated by mode + constant + setting + filter.
 		$gated = array(
 			'cache' => Cache::class,
