@@ -7,6 +7,10 @@
  * the operator choosing between "stale" (long TTL) and "slow" (short TTL, the
  * 4.4 s blocking re-renders).
  *
+ * Purges go to bext's main-listener endpoint /__bext/cache/purge-proxy, which
+ * honors paths + prefixes and evicts the in-memory FastCGI cache that serves
+ * WP pages (see Env::purge_proxy).
+ *
  * @package Bext\WP
  */
 
@@ -80,7 +84,6 @@ class Cache {
 		if ( ! $post instanceof \WP_Post ) {
 			return;
 		}
-		// Only care about transitions involving a public state.
 		if ( 'publish' !== $new_status && 'publish' !== $old_status ) {
 			return;
 		}
@@ -94,26 +97,22 @@ class Cache {
 		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
 			return;
 		}
-		$status = get_post_status( $post_id );
-		if ( in_array( $status, array( 'auto-draft', 'inherit', 'trash' ), true ) ) {
-			return;
-		}
-		if ( 'publish' !== $status ) {
-			return; // Drafts aren't publicly cached.
+		if ( 'publish' !== get_post_status( $post_id ) ) {
+			return; // Drafts/pending aren't publicly cached.
 		}
 		$this->queue_post_urls( $post_id );
 	}
 
 	public function on_delete_post( $post_id ): void {
-		if ( 'publish' === get_post_status( $post_id ) ) {
-			$this->queue_post_urls( $post_id );
-		}
+		// queue_post_urls gates on a viewable post type; purge regardless of
+		// status so a trashed-then-deleted published post still drops its URLs.
+		$this->queue_post_urls( (int) $post_id );
 	}
 
 	public function on_term( $term_id, $tt_id = 0, $taxonomy = '' ): void {
 		$link = get_term_link( (int) $term_id, (string) $taxonomy );
 		if ( ! is_wp_error( $link ) && $link ) {
-			$this->queue_paths( array( $this->url_to_path( $link ), '/' ) );
+			$this->queue_paths( array( $this->url_to_path( $link ), $this->env->home_path() ) );
 			$this->queue_sitemap_and_feeds();
 		}
 	}
@@ -141,14 +140,16 @@ class Cache {
 	}
 
 	public function on_comment( $comment_id, $comment = null ): void {
-		$post_id = $comment ? (int) $comment->comment_post_ID : (int) get_comment( $comment_id )->comment_post_ID;
-		if ( $post_id ) {
-			$this->queue_post_urls( $post_id );
+		if ( ! $comment instanceof \WP_Comment ) {
+			$comment = get_comment( $comment_id );
+		}
+		if ( $comment instanceof \WP_Comment && $comment->comment_post_ID ) {
+			$this->queue_post_urls( (int) $comment->comment_post_ID );
 		}
 	}
 
 	public function on_comment_status( $new_status, $old_status, $comment ): void {
-		if ( $comment && $comment->comment_post_ID ) {
+		if ( $comment instanceof \WP_Comment && $comment->comment_post_ID ) {
 			$this->queue_post_urls( (int) $comment->comment_post_ID );
 		}
 	}
@@ -189,26 +190,23 @@ class Cache {
 			return;
 		}
 
-		$paths = array( '/' ); // Home almost always lists recent content.
+		$paths = array( $this->env->home_path() ); // Home lists recent content.
 
 		$permalink = get_permalink( $post_id );
 		if ( $permalink ) {
 			$paths[] = $this->url_to_path( $permalink );
 		}
 
-		// Post type archive.
 		$archive = get_post_type_archive_link( $type );
 		if ( $archive ) {
 			$paths[] = $this->url_to_path( $archive );
 		}
 
-		// Author archive.
 		$author = get_author_posts_url( (int) $post->post_author );
 		if ( $author ) {
 			$paths[] = $this->url_to_path( $author );
 		}
 
-		// Term archives across all the post's taxonomies.
 		foreach ( get_object_taxonomies( $type ) as $tax ) {
 			$terms = get_the_terms( $post_id, $tax );
 			if ( is_array( $terms ) ) {
@@ -233,17 +231,35 @@ class Cache {
 		$this->queue_sitemap_and_feeds();
 	}
 
+	/**
+	 * Queue feeds + sitemaps + the REST collection, derived from WP so they're
+	 * correct on subdirectory installs and custom permalink/REST prefixes.
+	 */
 	public function queue_sitemap_and_feeds(): void {
-		$this->queue_paths(
-			array(
-				'/feed/',
-				'/comments/feed/',
-				'/wp-sitemap.xml',     // Core sitemaps.
-				'/sitemap_index.xml',  // Yoast.
-				'/sitemap.xml',        // RankMath / others.
-				'/wp-json/wp/v2/posts',
-			)
-		);
+		$paths = array();
+
+		$feed = get_feed_link();
+		if ( $feed ) {
+			$paths[] = $this->url_to_path( $feed );
+		}
+		$cfeed = get_feed_link( 'comments_' . get_default_feed() );
+		if ( $cfeed ) {
+			$paths[] = $this->url_to_path( $cfeed );
+		}
+		if ( function_exists( 'get_sitemap_url' ) ) {
+			$sitemap = get_sitemap_url( 'index' ); // WP 5.5+ core sitemaps.
+			if ( $sitemap ) {
+				$paths[] = $this->url_to_path( $sitemap );
+			}
+		}
+		// Common third-party sitemap names (Yoast / RankMath), under the install base.
+		$base    = $this->env->home_path();
+		$paths[] = $base . 'sitemap_index.xml';
+		$paths[] = $base . 'sitemap.xml';
+
+		$paths[] = $this->url_to_path( rest_url( 'wp/v2/posts' ) );
+
+		$this->queue_paths( $paths );
 	}
 
 	/**
@@ -285,7 +301,6 @@ class Cache {
 			return;
 		}
 
-		// Let the editor's response return before we talk to bext.
 		if ( function_exists( 'fastcgi_finish_request' ) ) {
 			@fastcgi_finish_request();
 		}
@@ -296,26 +311,30 @@ class Cache {
 		}
 
 		if ( $this->purge_all ) {
-			$body  = array(
+			// Scope the site-wide purge to this install's base path so a
+			// subdirectory multisite blog doesn't wipe its siblings' cache.
+			$prefix = $this->env->home_path();
+			$body   = array(
 				'host'     => $host,
 				'paths'    => array(),
-				'prefixes' => array( '/' ),
+				'prefixes' => array( $prefix ),
 			);
-			$count = 'all';
+			$count  = 'all';
+			$sample = array( $prefix . '*' );
 		} else {
-			$paths = array_keys( $this->paths );
-			$body  = array(
+			$paths  = array_keys( $this->paths );
+			$body   = array(
 				'host'     => $host,
 				'paths'    => $paths,
 				'prefixes' => array(),
 			);
-			$count = count( $paths );
+			$count  = count( $paths );
+			$sample = $paths;
 		}
 
-		$this->env->purge_request( '/nginx-cache/purge-site', $body, false );
-		$this->log_purge( $count, $this->purge_all ? array( '/*' ) : array_keys( $this->paths ) );
+		$this->env->purge_proxy( $body, false );
+		$this->log_purge( $count, $sample );
 
-		// Reset for any further work in the same process (CLI long-runs).
 		$this->paths     = array();
 		$this->purge_all = false;
 	}
@@ -324,10 +343,6 @@ class Cache {
 	// Response headers
 	// ---------------------------------------------------------------------
 
-	/**
-	 * Keep personalized responses out of the anonymous cache, and (optionally)
-	 * advertise a positive Cache-Control for anonymous pages.
-	 */
 	public function send_headers(): void {
 		if ( headers_sent() || is_admin() ) {
 			return;
@@ -335,13 +350,11 @@ class Cache {
 
 		header( 'X-Bext-WP: ' . BEXT_WP_VERSION, true );
 
-		if ( $this->env->is_personalized_request() || is_user_logged_in() || is_preview() ) {
+		if ( is_user_logged_in() || $this->env->is_personalized_request() || is_preview() ) {
 			header( 'Cache-Control: private, no-store, max-age=0', true );
 			return;
 		}
 
-		// Anonymous: by default defer to bext's proxy_cache_anonymous_response_header.
-		// Operators who don't configure that at the vhost can opt in here.
 		$cc = apply_filters( 'bext/anonymous_cache_control', '' );
 		if ( is_string( $cc ) && '' !== $cc && $this->is_cacheable_view() ) {
 			header( 'Cache-Control: ' . $cc, true );
@@ -372,27 +385,32 @@ class Cache {
 			array(
 				'id'    => 'bext-purge',
 				'title' => 'Purge bext cache',
-				'href'  => wp_nonce_url( add_query_arg( 'action', 'bext_purge', $base ), 'bext_purge' ),
+				'href'  => esc_url( wp_nonce_url( add_query_arg( 'action', 'bext_purge', $base ), 'bext_purge' ) ),
 				'meta'  => array( 'title' => 'Purge the entire bext cache for this site' ),
 			)
 		);
 
 		if ( ! is_admin() && ! is_404() ) {
-			$current = $this->normalize_path( add_query_arg( array() ) );
+			// Path-only (drop the query string) so it matches the cached key,
+			// and never feed the raw request URI into the href (XSS-safe).
+			$req     = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( (string) $_SERVER['REQUEST_URI'] ) : '/';
+			$current = $this->normalize_path( strtok( $req, '?' ) );
 			$wp_admin_bar->add_node(
 				array(
 					'parent' => 'bext-purge',
 					'id'     => 'bext-purge-this',
 					'title'  => 'Purge this URL',
-					'href'   => wp_nonce_url(
-						add_query_arg(
-							array(
-								'action' => 'bext_purge',
-								'path'   => rawurlencode( $current ),
+					'href'   => esc_url(
+						wp_nonce_url(
+							add_query_arg(
+								array(
+									'action' => 'bext_purge',
+									'path'   => rawurlencode( $current ),
+								),
+								$base
 							),
-							$base
-						),
-						'bext_purge'
+							'bext_purge'
+						)
 					),
 				)
 			);
@@ -406,9 +424,15 @@ class Cache {
 		check_admin_referer( 'bext_purge' );
 
 		$host = $this->env->canonical_host();
-		$path = isset( $_GET['path'] ) ? $this->normalize_path( rawurldecode( wp_unslash( $_GET['path'] ) ) ) : '';
+		$path = '';
+		if ( isset( $_GET['path'] ) ) {
+			// Take the path component only; the query/fragment aren't part of
+			// the cached key for a normal page view.
+			$raw  = strtok( rawurldecode( wp_unslash( (string) $_GET['path'] ) ), '?' );
+			$path = $this->normalize_path( $raw );
+		}
 
-		if ( '' !== $path ) {
+		if ( '' !== $path && '/' !== $path ) {
 			$body  = array(
 				'host'     => $host,
 				'paths'    => array( $path ),
@@ -419,14 +443,14 @@ class Cache {
 			$body  = array(
 				'host'     => $host,
 				'paths'    => array(),
-				'prefixes' => array( '/' ),
+				'prefixes' => array( $this->env->home_path() ),
 			);
-			$label = array( '/*' );
+			$label = array( $this->env->home_path() . '*' );
 		}
 
-		$res = $this->env->purge_request( '/nginx-cache/purge-site', $body, true );
+		$res = $this->env->purge_proxy( $body, true );
 		$ok  = is_array( $res ) && 200 === $res['code'];
-		$this->log_purge( '' !== $path ? 1 : 'all', $label, $ok ? 'manual-ok' : 'manual-fail' );
+		$this->log_purge( '' !== $path && '/' !== $path ? 1 : 'all', $label, $ok ? 'manual-ok' : 'manual-fail' );
 
 		$back = wp_get_referer() ? wp_get_referer() : admin_url();
 		wp_safe_redirect( add_query_arg( 'bext_purged', $ok ? '1' : '0', $back ) );
@@ -438,7 +462,7 @@ class Cache {
 	// ---------------------------------------------------------------------
 
 	/**
-	 * @param int|string $count Number of paths or 'all'.
+	 * @param int|string $count  Number of paths or 'all'.
 	 * @param string[]   $sample Sample of paths purged.
 	 * @param string     $via    Origin tag.
 	 */
@@ -456,8 +480,7 @@ class Cache {
 				'sample' => array_slice( array_values( $sample ), 0, 6 ),
 			)
 		);
-		$log = array_slice( $log, 0, self::LOG_MAX );
-		update_option( self::LOG_OPTION, $log, false );
+		update_option( self::LOG_OPTION, array_slice( $log, 0, self::LOG_MAX ), false );
 	}
 
 	public function purge_log(): array {
@@ -474,7 +497,7 @@ class Cache {
 		$qs   = wp_parse_url( $url, PHP_URL_QUERY );
 		$out  = $path ? $path : '/';
 		if ( $qs ) {
-			$out .= '?' . $qs;
+			$out .= '?' . $qs; // Kept for plain-permalink sites (/?p=123).
 		}
 		return $this->normalize_path( $out );
 	}
@@ -484,7 +507,6 @@ class Cache {
 		if ( '' === $path ) {
 			return '';
 		}
-		// Strip any accidental scheme+host.
 		if ( preg_match( '#^https?://#i', $path ) ) {
 			$path = $this->url_to_path( $path );
 		}

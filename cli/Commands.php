@@ -43,7 +43,7 @@ class Commands {
 			array( 'key' => 'bext version', 'value' => $env->bext_version() ?: '-' ),
 			array( 'key' => 'Canonical host', 'value' => $env->canonical_host() ),
 			array( 'key' => 'App id', 'value' => $env->app_id() ),
-			array( 'key' => 'Purge port', 'value' => (string) $env->purge_port() ),
+			array( 'key' => 'Purge endpoint', 'value' => '/__bext/cache/purge-proxy' ),
 		);
 		\WP_CLI\Utils\format_items( 'table', $rows, array( 'key', 'value' ) );
 	}
@@ -71,7 +71,7 @@ class Commands {
 		$host = $env->canonical_host();
 		$path = isset( $assoc['url'] ) ? (string) $assoc['url'] : '';
 
-		if ( '' !== $path ) {
+		if ( '' !== $path && '/' !== $path ) {
 			if ( '/' !== substr( $path, 0, 1 ) ) {
 				$path = '/' . $path;
 			}
@@ -81,14 +81,15 @@ class Commands {
 				'prefixes' => array(),
 			);
 		} else {
+			$path = '';
 			$body = array(
 				'host'     => $host,
 				'paths'    => array(),
-				'prefixes' => array( '/' ),
+				'prefixes' => array( $env->home_path() ),
 			);
 		}
 
-		$res = $env->purge_request( '/nginx-cache/purge-site', $body, true );
+		$res = $env->purge_proxy( $body, true );
 		if ( is_wp_error( $res ) ) {
 			\WP_CLI::error( 'Purge failed: ' . $res->get_error_message() );
 		}

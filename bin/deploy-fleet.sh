@@ -50,6 +50,7 @@ skipped=0
 
 for pub in "${PUBDIRS[@]}"; do
 	if [ -n "$FILTER" ] && [[ "$pub" != *"$FILTER"* ]]; then
+		skipped=$((skipped + 1))
 		continue
 	fi
 

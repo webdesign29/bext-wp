@@ -3,6 +3,37 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.2.0] - 2026-06-13
+
+Post-review hardening. The purge transport in 0.1.0 targeted the wrong endpoint and silently
+no-opped — this release makes purge-on-change actually work, plus security and correctness fixes.
+
+### Fixed
+- **Cache purge now works.** Purges go to the bext main-listener endpoint
+  `POST /__bext/cache/purge-proxy` (honors `paths`/`prefixes`, evicts the in-memory FastCGI cache
+  serving WP pages) instead of the cache-purge port's disk-substring handler, which ignored
+  `paths` and silently did nothing for WordPress sites. Verified surgical (one URL → one eviction).
+- **Subdirectory & multisite correctness.** Home, feeds, sitemaps and the REST collection are now
+  derived from WordPress (`get_feed_link`, `get_sitemap_url`, `rest_url`) and the install base
+  path, so sites under `/blog/` purge the right URLs; a subdirectory-multisite full purge is scoped
+  to the blog's path instead of wiping the whole network.
+- **Reflected-XSS hardening** in the admin-bar "Purge this URL" link (no longer derives the href
+  from the raw request URI; `esc_url()` on all admin-bar hrefs).
+- `bext_version` and host/app-id dashboard fields are now correctly escaped (no double-encoding).
+- `on_comment` no longer risks a fatal on a missing comment; `before_delete_post` purges regardless
+  of status (trashed-then-deleted posts).
+
+### Changed
+- No purge port / discovery file / `BEXT_WP_PURGE_PORT` constant needed — everything is on
+  `127.0.0.1:80`.
+- `bext/enqueue` is now available as a filter (`apply_filters('bext/enqueue', null, …)`) to
+  retrieve the job id, in addition to the fire-and-forget action.
+- `bext/sdk_email_fallback` action fires when bext can't take an email and WP sends it instead.
+
+### Added
+- `uninstall.php` + deactivation cleanup remove all plugin options (incl. the sticky detection flag).
+- Full GPL-2.0 license text. CI now runs the unit test.
+
 ## [0.1.0] - 2026-06-13
 
 Initial release.

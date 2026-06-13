@@ -69,7 +69,7 @@ class Admin {
 
 	public function notices(): void {
 		if ( isset( $_GET['bext_purged'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$ok = '1' === $_GET['bext_purged']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$ok = '1' === sanitize_text_field( wp_unslash( $_GET['bext_purged'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			printf(
 				'<div class="notice notice-%s is-dismissible"><p>%s</p></div>',
 				$ok ? 'success' : 'error',
@@ -116,15 +116,16 @@ class Admin {
 	}
 
 	private function section_status(): void {
-		$on = $this->env->is_behind_bext();
+		$on  = $this->env->is_behind_bext();
+		$ver = $this->env->bext_version();
 		echo '<div class="bext-card">';
 		echo '<h2>Integration</h2>';
 		echo '<table class="bext-kv">';
 		$this->kv( 'Status', $on ? '<span class="bext-pill ok">Served by bext</span>' : '<span class="bext-pill bad">Not detected</span>', true );
-		$this->kv( 'bext version', $this->env->bext_version() ?: '&mdash;', true );
-		$this->kv( 'Canonical host', esc_html( $this->env->canonical_host() ) );
-		$this->kv( 'App id', esc_html( $this->env->app_id() ) );
-		$this->kv( 'Purge port', (string) $this->env->purge_port() );
+		$this->kv( 'bext version', '' !== $ver ? esc_html( $ver ) : '&mdash;', true );
+		$this->kv( 'Canonical host', $this->env->canonical_host() );
+		$this->kv( 'App id', $this->env->app_id() );
+		$this->kv( 'Purge endpoint', '/__bext/cache/purge-proxy (loopback)' );
 		echo '</table>';
 		echo '</div>';
 	}

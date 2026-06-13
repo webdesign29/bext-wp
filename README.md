@@ -36,13 +36,13 @@ PHP-FPM workers.
 ## Requirements
 
 - WordPress 5.8+, PHP 7.4+
-- The site must be served by **bext**. For deterministic detection and zero file-system reads,
-  bext should send these FastCGI params (added in bext's FastCGI environ builder):
-  - `BEXT_SERVER=<version>` — presence ⇒ behind bext.
-  - `BEXT_CACHE_PURGE_PORT=<port>` — where the plugin posts purges.
-
-  Without them the plugin falls back to a sticky auto-detect (the `x-bext-cache-refresh` header)
-  plus the `/run/bext/cache-purge.port` discovery file and port `8444`.
+- The site must be served by **bext**. For deterministic detection, bext sends the
+  `BEXT_SERVER=<version>` FastCGI param (presence ⇒ behind bext). Without it the plugin falls
+  back to a sticky auto-detect (the `x-bext-cache-refresh` request header) or the
+  `BEXT_WP_ASSUME_BEHIND_BEXT` constant.
+- All loopback calls — cache purge (`POST /__bext/cache/purge-proxy`, which surgically evicts the
+  in-memory FastCGI cache) and the SDK (`/__bext/sdk/*`) — go to the bext main listener on
+  `127.0.0.1:80`. No extra port or file-system access (open_basedir-safe).
 
 ## Install
 
@@ -69,14 +69,16 @@ All optional — sensible defaults otherwise.
 
 ```php
 define( 'BEXT_WP_ENABLE', true );              // master switch (default true)
-define( 'BEXT_WP_PURGE_PORT', 54000 );         // override the purge port
 define( 'BEXT_WP_APP_ID', 'my-site' );         // X-Bext-App-Id for the SDK bridge
 define( 'BEXT_WP_ASSUME_BEHIND_BEXT', true );  // force-on detection
 define( 'BEXT_WP_SDK_EMAIL', true );           // wp_mail via bext (needs per-app SMTP config)
-define( 'BEXT_WP_SDK_JOBS', true );            // enable do_action('bext/enqueue', ...)
+define( 'BEXT_WP_SDK_JOBS', true );            // enable bext/enqueue
 define( 'BEXT_WP_CAPTURE_WARNINGS', true );    // record recent PHP warnings (dev)
 // Disable a module: define( 'BEXT_WP_DISABLE_SDK', true );
 ```
+
+The sticky detection flag and all options are removed on plugin deletion (`uninstall.php`) and on
+deactivation (normal-plugin installs).
 
 ### Filters
 
@@ -85,8 +87,13 @@ add_filter( 'bext/enable_cache', '__return_false' );          // disable a modul
 add_filter( 'bext/purge_urls_for_post', $fn, 10, 2 );         // customize purged URLs
 add_filter( 'bext/anonymous_cache_control', fn() => 'public, max-age=300, stale-while-revalidate=86400' );
 add_filter( 'bext/as_concurrent_batches', fn() => 2 );        // Action Scheduler concurrency
-do_action( 'bext/enqueue', 'my-queue', [ 'job' => 'x' ] );    // enqueue a bext job
+do_action( 'bext/enqueue', 'my-queue', [ 'job' => 'x' ] );    // enqueue a job (fire-and-forget)
+$id = apply_filters( 'bext/enqueue', null, 'my-queue', [ 'job' => 'x' ] ); // …and get the job id
 ```
+
+Other hooks: `bext/enable_{cron,health,admin,sdk}`, `bext/as_time_limit`, `bext/system_cron_expected`,
+`bext/health_checks`, `bext/enable_warning_capture`, `bext/sdk_email_fallback` (fires when bext
+can't take an email and WP sends it instead), and the `bext/booted` action.
 
 ## WP-CLI
 

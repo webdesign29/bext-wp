@@ -12,16 +12,22 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Everything the modules need to know about "are we behind bext, and how do we
  * talk back to it" lives here. Reads are cached per-request.
+ *
+ * All loopback calls go to the bext main listener on 127.0.0.1:80 — the same
+ * port that serves the site, always reachable, no port discovery needed:
+ *   - cache purge: POST /__bext/cache/purge-proxy  (honors paths + prefixes,
+ *     evicts the in-memory FastCGI cache that serves WP pages)
+ *   - SDK:         POST /__bext/sdk/*              (X-Bext-App-Id loopback bypass)
+ *   - status:      GET  /__bext/health|metrics
  */
 class Env {
 
 	const DETECT_OPTION = 'bext_wp_detected';
 
+	const PURGE_ENDPOINT = 'http://127.0.0.1/__bext/cache/purge-proxy';
+
 	/** @var bool|null */
 	private $behind = null;
-
-	/** @var int|null */
-	private $purge_port = null;
 
 	/**
 	 * Are we being served by bext?
@@ -29,8 +35,11 @@ class Env {
 	 * Detection order:
 	 *  1. The BEXT_SERVER fastcgi param (set by the bext FastCGI environ builder).
 	 *  2. The x-bext-cache-refresh request header (bext's background refresh).
-	 *  3. A sticky option flag set the first time we ever saw a bext signal.
+	 *  3. A sticky option flag set the first time we ever saw a bext signal
+	 *     (so cache-HIT requests, which never reach PHP, don't un-detect us).
 	 *  4. An operator override constant BEXT_WP_ASSUME_BEHIND_BEXT.
+	 *
+	 * The sticky flag is cleared on uninstall/deactivation (see uninstall.php).
 	 */
 	public function is_behind_bext(): bool {
 		if ( null !== $this->behind ) {
@@ -39,9 +48,9 @@ class Env {
 
 		$signal = isset( $_SERVER['BEXT_SERVER'] ) || $this->is_cache_refresh_request();
 
+		// Sticky one-time write: guarded so it runs at most once ever (the first
+		// PHP request that sees a live bext signal), never on subsequent requests.
 		if ( $signal && ! get_option( self::DETECT_OPTION ) ) {
-			// Make detection sticky so normal requests (which may lack a signal
-			// before the bext param ships) still know they're behind bext.
 			update_option( self::DETECT_OPTION, 1, true );
 		}
 
@@ -56,69 +65,32 @@ class Env {
 	 * bext server version string (from the BEXT_SERVER param), or '' if unknown.
 	 */
 	public function bext_version(): string {
-		return isset( $_SERVER['BEXT_SERVER'] ) ? sanitize_text_field( (string) $_SERVER['BEXT_SERVER'] ) : '';
+		return isset( $_SERVER['BEXT_SERVER'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['BEXT_SERVER'] ) ) : '';
 	}
 
 	/**
-	 * Is this the bext background-refresh self-request? Such requests should
-	 * skip work that only matters for real visitors (e.g. analytics).
+	 * Is this the bext background-refresh self-request?
 	 */
 	public function is_cache_refresh_request(): bool {
 		return isset( $_SERVER['HTTP_X_BEXT_CACHE_REFRESH'] );
 	}
 
 	/**
-	 * FastCGI/PHP execution time bext measured for the previous response, if it
-	 * surfaced one (informational; not always present).
-	 */
-	public function php_exec_hint(): string {
-		return isset( $_SERVER['BEXT_PHP_EXEC_US'] ) ? sanitize_text_field( (string) $_SERVER['BEXT_PHP_EXEC_US'] ) : '';
-	}
-
-	/**
-	 * The cache-purge port. Prefers the fastcgi param (no file read under
-	 * open_basedir), then a constant, then the discovery file, then 8444.
-	 */
-	public function purge_port(): int {
-		if ( null !== $this->purge_port ) {
-			return $this->purge_port;
-		}
-
-		$port = 0;
-
-		if ( isset( $_SERVER['BEXT_CACHE_PURGE_PORT'] ) ) {
-			$port = (int) $_SERVER['BEXT_CACHE_PURGE_PORT'];
-		}
-		if ( $port <= 0 && defined( 'BEXT_WP_PURGE_PORT' ) ) {
-			$port = (int) BEXT_WP_PURGE_PORT;
-		}
-		if ( $port <= 0 ) {
-			// Discovery files (likely blocked by open_basedir; tried best-effort).
-			foreach ( array( '/run/bext/cache-purge.port', '/tmp/bext-cache-purge.port' ) as $file ) {
-				if ( @is_readable( $file ) ) {
-					$val = (int) trim( (string) @file_get_contents( $file ) );
-					if ( $val > 0 ) {
-						$port = $val;
-						break;
-					}
-				}
-			}
-		}
-		if ( $port <= 0 ) {
-			$port = 8444; // bext default.
-		}
-
-		$this->purge_port = $port;
-		return $port;
-	}
-
-	/**
 	 * Canonical host bext keys the cache by (aliases 301 -> canonical).
 	 */
 	public function canonical_host(): string {
-		$home = home_url( '/' );
-		$host = wp_parse_url( $home, PHP_URL_HOST );
+		$host = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
 		return $host ? strtolower( $host ) : '';
+	}
+
+	/**
+	 * The path prefix of this install (for subdirectory sites home_url() carries
+	 * a path, e.g. "/blog/"). Always begins and ends with "/".
+	 */
+	public function home_path(): string {
+		$p = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
+		$p = is_string( $p ) ? trim( $p, '/' ) : '';
+		return '' === $p ? '/' : '/' . $p . '/';
 	}
 
 	/**
@@ -160,30 +132,43 @@ class Env {
 		return false;
 	}
 
+	/**
+	 * Forget the sticky detection flag (used on uninstall/deactivation so a site
+	 * that later moves off bext doesn't keep believing it's behind bext).
+	 */
+	public function clear_detection(): void {
+		delete_option( self::DETECT_OPTION );
+		$this->behind = null;
+	}
+
 	// ---------------------------------------------------------------------
-	// Loopback transport
+	// Loopback transport (all on 127.0.0.1:80, the bext main listener)
 	// ---------------------------------------------------------------------
 
 	/**
-	 * POST to the bext cache-purge port. Non-blocking by default so callers on
-	 * the request path never wait.
+	 * Purge bext's FastCGI/proxy cache for the given paths/prefixes via the
+	 * main-listener endpoint that actually evicts the in-memory cache serving
+	 * WP pages. Non-blocking by default so callers on the request path never wait.
 	 *
-	 * @param string $path    Endpoint path, e.g. '/nginx-cache/purge-site'.
-	 * @param array  $body    JSON-encodable body.
-	 * @param bool   $blocking Wait for + return the response (used by manual purge/CLI).
-	 * @return array|\WP_Error  ['code'=>int,'body'=>string] when blocking, else true.
+	 * @param array $body     { host, paths[], prefixes[] }.
+	 * @param bool  $blocking Wait for + return the response (manual purge / CLI).
+	 * @return array|\WP_Error|true ['code'=>int,'body'=>string] when blocking, else true.
 	 */
-	public function purge_request( string $path, array $body, bool $blocking = false ) {
-		$url  = 'http://127.0.0.1:' . $this->purge_port() . $path;
-		$args = array(
-			'method'      => 'POST',
-			'timeout'     => $blocking ? 5 : 1,
-			'blocking'    => $blocking,
-			'redirection' => 0,
-			'headers'     => array( 'Content-Type' => 'application/json' ),
-			'body'        => wp_json_encode( $body ),
+	public function purge_proxy( array $body, bool $blocking = false ) {
+		$res = wp_remote_post(
+			self::PURGE_ENDPOINT,
+			array(
+				'method'      => 'POST',
+				'timeout'     => $blocking ? 5 : 1,
+				'blocking'    => $blocking,
+				'redirection' => 0,
+				'headers'     => array(
+					'Content-Type' => 'application/json',
+					'Host'         => $this->canonical_host(),
+				),
+				'body'        => wp_json_encode( $body ),
+			)
 		);
-		$res = wp_remote_post( $url, $args );
 		if ( ! $blocking ) {
 			return true;
 		}
@@ -197,17 +182,15 @@ class Env {
 	}
 
 	/**
-	 * Call a bext SDK endpoint on the main listener with the app-id loopback
-	 * bypass header.
+	 * Call a bext SDK endpoint with the app-id loopback bypass header.
 	 *
-	 * @param string $method  HTTP method.
-	 * @param string $path    e.g. '/__bext/sdk/email/send'.
-	 * @param array|null $body JSON body (for POST), or null.
-	 * @param bool $blocking  Wait for the response.
-	 * @return array|\WP_Error
+	 * @param string     $method   HTTP method.
+	 * @param string     $path     e.g. '/__bext/sdk/email/send'.
+	 * @param array|null $body     JSON body (for POST), or null.
+	 * @param bool       $blocking Wait for the response.
+	 * @return array|\WP_Error|true
 	 */
 	public function sdk_request( string $method, string $path, $body = null, bool $blocking = true ) {
-		$url  = 'http://127.0.0.1' . $path;
 		$args = array(
 			'method'      => strtoupper( $method ),
 			'timeout'     => $blocking ? 8 : 1,
@@ -222,7 +205,7 @@ class Env {
 		if ( null !== $body ) {
 			$args['body'] = wp_json_encode( $body );
 		}
-		$res = wp_remote_request( $url, $args );
+		$res = wp_remote_request( 'http://127.0.0.1' . $path, $args );
 		if ( ! $blocking ) {
 			return true;
 		}
@@ -242,9 +225,8 @@ class Env {
 	 * @return array|\WP_Error ['code'=>int,'body'=>string]
 	 */
 	public function bext_get( string $path ) {
-		$url = 'http://127.0.0.1' . $path;
 		$res = wp_remote_get(
-			$url,
+			'http://127.0.0.1' . $path,
 			array(
 				'timeout'     => 4,
 				'redirection' => 0,

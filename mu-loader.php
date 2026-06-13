@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bext for WordPress (mu-loader)
  * Description: Must-use loader that boots the bext-wp package from its subdirectory.
- * Version:     0.1.0
+ * Version:     0.2.0
  * Author:      webdesign29
  * License:     GPL-2.0-or-later
  *

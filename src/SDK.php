@@ -36,8 +36,11 @@ class SDK {
 			add_filter( 'pre_wp_mail', array( $this, 'send_mail' ), 10, 2 );
 		}
 
-		// Generic enqueue shim: do_action( 'bext/enqueue', $name, $payload ).
-		add_action( 'bext/enqueue', array( $this, 'enqueue' ), 10, 3 );
+		// Enqueue shims:
+		//   do_action( 'bext/enqueue', $name, $payload, $delay )           — fire-and-forget
+		//   apply_filters( 'bext/enqueue', null, $name, $payload, $delay ) — returns the job id
+		add_action( 'bext/enqueue', array( $this, 'enqueue_action' ), 10, 3 );
+		add_filter( 'bext/enqueue', array( $this, 'enqueue_filter' ), 10, 4 );
 	}
 
 	private function email_enabled(): bool {
@@ -116,19 +119,49 @@ class SDK {
 					return true; // Delivered by bext.
 				}
 			}
+			// bext couldn't take it (no SMTP config, error, unreachable). Surface
+			// the reason so operators don't silently think bext is sending.
+			do_action( 'bext/sdk_email_fallback', $res, $payload );
 		} catch ( \Throwable $e ) {
-			// Fall through to WP's wp_mail.
+			do_action( 'bext/sdk_email_fallback', $e, $atts );
 		}
 		return $short; // null → WordPress sends it the normal way.
+	}
+
+	/**
+	 * Action wrapper: do_action( 'bext/enqueue', $name, $payload, $delay ).
+	 * Fire-and-forget (action return values are discarded by do_action).
+	 *
+	 * @param string   $name    Queue name.
+	 * @param mixed    $payload JSON-encodable payload.
+	 * @param int|null $delay   Seconds to delay.
+	 */
+	public function enqueue_action( string $name, $payload = array(), $delay = null ): void {
+		$this->enqueue( $name, $payload, $delay );
+	}
+
+	/**
+	 * Filter wrapper: apply_filters( 'bext/enqueue', null, $name, $payload, $delay )
+	 * → returns the job id (or the passed-through default on failure).
+	 *
+	 * @param mixed    $default Returned if enqueue fails/disabled.
+	 * @param string   $name    Queue name.
+	 * @param mixed    $payload JSON-encodable payload.
+	 * @param int|null $delay   Seconds to delay.
+	 * @return mixed Job id string, or $default.
+	 */
+	public function enqueue_filter( $default, string $name, $payload = array(), $delay = null ) {
+		$id = $this->enqueue( $name, $payload, $delay );
+		return null === $id ? $default : $id;
 	}
 
 	/**
 	 * Enqueue a background job onto a bext queue. No-op (returns null) unless
 	 * jobs are enabled.
 	 *
-	 * @param string $name    Queue name.
-	 * @param mixed  $payload JSON-encodable payload.
-	 * @param int|null $delay Seconds to delay.
+	 * @param string   $name    Queue name.
+	 * @param mixed    $payload JSON-encodable payload.
+	 * @param int|null $delay   Seconds to delay.
 	 * @return string|null Job id, or null.
 	 */
 	public function enqueue( string $name, $payload = array(), $delay = null ) {
