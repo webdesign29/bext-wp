@@ -44,11 +44,11 @@ class SDK {
 	}
 
 	private function email_enabled(): bool {
-		return defined( 'BEXT_WP_SDK_EMAIL' ) && BEXT_WP_SDK_EMAIL && apply_filters( 'bext/enable_sdk_email', true );
+		return $this->env->sdk_email_enabled();
 	}
 
 	private function jobs_enabled(): bool {
-		return defined( 'BEXT_WP_SDK_JOBS' ) && BEXT_WP_SDK_JOBS && apply_filters( 'bext/enable_sdk_jobs', true );
+		return $this->env->sdk_jobs_enabled();
 	}
 
 	/**

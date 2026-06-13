@@ -122,6 +122,7 @@ class Admin {
 		echo '<h2>Integration</h2>';
 		echo '<table class="bext-kv">';
 		$this->kv( 'Status', $on ? '<span class="bext-pill ok">Served by bext</span>' : '<span class="bext-pill bad">Not detected</span>', true );
+		$this->kv( 'Mode', '<code>' . esc_html( $this->env->mode() ) . '</code> &middot; <a href="' . esc_url( admin_url( 'admin.php?page=' . Settings::PAGE ) ) . '">Settings</a>', true );
 		$this->kv( 'bext version', '' !== $ver ? esc_html( $ver ) : '&mdash;', true );
 		$this->kv( 'Canonical host', $this->env->canonical_host() );
 		$this->kv( 'App id', $this->env->app_id() );
@@ -220,7 +221,7 @@ class Admin {
 		$this->kv( 'Jobs via bext', ! empty( $s['jobs'] ) ? '<span class="bext-pill ok">on</span>' : '<span class="bext-pill">off</span>', true );
 		$this->kv( 'App id', esc_html( (string) ( $s['app_id'] ?? '' ) ) );
 		echo '</table>';
-		echo '<p class="bext-muted">Enable with <code>define( \'BEXT_WP_SDK_EMAIL\', true );</code> / <code>BEXT_WP_SDK_JOBS</code> in wp-config.php.</p>';
+		echo '<p class="bext-muted">Toggle these under <a href="' . esc_url( admin_url( 'admin.php?page=' . Settings::PAGE ) ) . '">Settings → SDK bridge</a> (or <code>BEXT_WP_SDK_EMAIL</code> / <code>BEXT_WP_SDK_JOBS</code> in wp-config.php).</p>';
 		echo '</div>';
 	}
 

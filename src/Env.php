@@ -1,6 +1,18 @@
 <?php
 /**
- * Environment service: bext detection, endpoint resolution, loopback helpers.
+ * Environment service: configuration resolution, bext detection, and the
+ * loopback / cloud transport.
+ *
+ * Configuration precedence (highest wins):
+ *   1. wp-config constant (BEXT_WP_*)         — power users / locked config
+ *   2. Settings page option (bext_wp_settings) — the wp-admin UI
+ *   3. Built-in default
+ * Filters (bext/*) still apply on top where documented.
+ *
+ * Transport: in "auto" mode everything goes to the bext main listener on
+ * 127.0.0.1:80 (loopback). In "cloud" mode it goes to the configured bext
+ * endpoint with a bearer token, so a site served by bext cloud can integrate
+ * even when WordPress runs off-box.
  *
  * @package Bext\WP
  */
@@ -9,49 +21,148 @@ namespace Bext\WP;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Everything the modules need to know about "are we behind bext, and how do we
- * talk back to it" lives here. Reads are cached per-request.
- *
- * All loopback calls go to the bext main listener on 127.0.0.1:80 — the same
- * port that serves the site, always reachable, no port discovery needed:
- *   - cache purge: POST /__bext/cache/purge-proxy  (honors paths + prefixes,
- *     evicts the in-memory FastCGI cache that serves WP pages)
- *   - SDK:         POST /__bext/sdk/*              (X-Bext-App-Id loopback bypass)
- *   - status:      GET  /__bext/health|metrics
- */
 class Env {
 
-	const DETECT_OPTION = 'bext_wp_detected';
-
-	const PURGE_ENDPOINT = 'http://127.0.0.1/__bext/cache/purge-proxy';
+	const DETECT_OPTION   = 'bext_wp_detected';
+	const SETTINGS_OPTION = 'bext_wp_settings';
+	const PURGE_PATH      = '/__bext/cache/purge-proxy';
 
 	/** @var bool|null */
 	private $behind = null;
 
+	/** @var array|null */
+	private $settings = null;
+
+	// ---------------------------------------------------------------------
+	// Settings
+	// ---------------------------------------------------------------------
+
+	/** @return array<string,mixed> The stored settings (cached per-request). */
+	public function settings(): array {
+		if ( null === $this->settings ) {
+			$opt            = get_option( self::SETTINGS_OPTION, array() );
+			$this->settings = is_array( $opt ) ? $opt : array();
+		}
+		return $this->settings;
+	}
+
+	/**
+	 * @param string $key
+	 * @param mixed  $default
+	 * @return mixed
+	 */
+	public function setting( string $key, $default = null ) {
+		$s = $this->settings();
+		return array_key_exists( $key, $s ) ? $s[ $key ] : $default;
+	}
+
+	public function setting_bool( string $key, bool $default ): bool {
+		$v = $this->setting( $key, null );
+		return null === $v ? $default : (bool) $v;
+	}
+
+	/** Invalidate the per-request settings cache (after a save). */
+	public function flush_settings_cache(): void {
+		$this->settings = null;
+		$this->behind   = null;
+	}
+
+	/**
+	 * Connection mode: 'auto' (loopback), 'cloud' (remote endpoint), or 'off'.
+	 */
+	public function mode(): string {
+		if ( defined( 'BEXT_WP_MODE' ) && BEXT_WP_MODE ) {
+			$m = (string) BEXT_WP_MODE;
+		} else {
+			$m = (string) $this->setting( 'mode', 'auto' );
+		}
+		return in_array( $m, array( 'auto', 'cloud', 'off' ), true ) ? $m : 'auto';
+	}
+
+	/**
+	 * Is a feature module enabled? constant (force-off) > setting > filter(default true).
+	 *
+	 * @param string $module cache|cron|health|sdk
+	 */
+	public function is_enabled( string $module ): bool {
+		if ( 'off' === $this->mode() ) {
+			return false;
+		}
+		$const = 'BEXT_WP_DISABLE_' . strtoupper( $module );
+		if ( defined( $const ) && constant( $const ) ) {
+			return false;
+		}
+		$setting = $this->setting( 'enable_' . $module, null );
+		$default = null === $setting ? true : (bool) $setting;
+
+		/** @param bool $default Whether the module is enabled. */
+		return (bool) apply_filters( "bext/enable_{$module}", $default );
+	}
+
+	public function sdk_email_enabled(): bool {
+		if ( defined( 'BEXT_WP_SDK_EMAIL' ) ) {
+			$on = (bool) BEXT_WP_SDK_EMAIL;
+		} else {
+			$on = $this->setting_bool( 'sdk_email', false );
+		}
+		return $on && apply_filters( 'bext/enable_sdk_email', true );
+	}
+
+	public function sdk_jobs_enabled(): bool {
+		if ( defined( 'BEXT_WP_SDK_JOBS' ) ) {
+			$on = (bool) BEXT_WP_SDK_JOBS;
+		} else {
+			$on = $this->setting_bool( 'sdk_jobs', false );
+		}
+		return $on && apply_filters( 'bext/enable_sdk_jobs', true );
+	}
+
+	public function purge_on_save_enabled(): bool {
+		return $this->setting_bool( 'purge_on_save', true );
+	}
+
+	public function capture_warnings_enabled(): bool {
+		if ( defined( 'BEXT_WP_CAPTURE_WARNINGS' ) ) {
+			return (bool) BEXT_WP_CAPTURE_WARNINGS;
+		}
+		if ( $this->setting_bool( 'capture_warnings', false ) ) {
+			return true;
+		}
+		return defined( 'WP_DEBUG' ) && WP_DEBUG;
+	}
+
+	public function anon_cache_control(): string {
+		return (string) $this->setting( 'anon_cache_control', '' );
+	}
+
+	// ---------------------------------------------------------------------
+	// Detection
+	// ---------------------------------------------------------------------
+
 	/**
 	 * Are we being served by bext?
 	 *
-	 * Detection order:
-	 *  1. The BEXT_SERVER fastcgi param (set by the bext FastCGI environ builder).
-	 *  2. The x-bext-cache-refresh request header (bext's background refresh).
-	 *  3. A sticky option flag set the first time we ever saw a bext signal
-	 *     (so cache-HIT requests, which never reach PHP, don't un-detect us).
-	 *  4. An operator override constant BEXT_WP_ASSUME_BEHIND_BEXT.
-	 *
-	 * The sticky flag is cleared on uninstall/deactivation (see uninstall.php).
+	 * cloud mode ⇒ yes (explicitly configured). Otherwise: the BEXT_SERVER
+	 * fastcgi param, the x-bext-cache-refresh header, a sticky one-time flag, or
+	 * the BEXT_WP_ASSUME_BEHIND_BEXT constant.
 	 */
 	public function is_behind_bext(): bool {
 		if ( null !== $this->behind ) {
 			return $this->behind;
 		}
+		if ( 'off' === $this->mode() ) {
+			$this->behind = false;
+			return false;
+		}
+		if ( 'cloud' === $this->mode() ) {
+			$this->behind = true;
+			return true;
+		}
 
 		$signal = isset( $_SERVER['BEXT_SERVER'] ) || $this->is_cache_refresh_request();
 
-		// Sticky one-time write: guarded so it runs at most once ever (the first
-		// PHP request that sees a live bext signal), never on subsequent requests.
 		if ( $signal && ! get_option( self::DETECT_OPTION ) ) {
-			update_option( self::DETECT_OPTION, 1, true );
+			update_option( self::DETECT_OPTION, 1, true ); // One-time sticky write.
 		}
 
 		$this->behind = $signal
@@ -61,54 +172,35 @@ class Env {
 		return $this->behind;
 	}
 
-	/**
-	 * bext server version string (from the BEXT_SERVER param), or '' if unknown.
-	 */
 	public function bext_version(): string {
 		return isset( $_SERVER['BEXT_SERVER'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['BEXT_SERVER'] ) ) : '';
 	}
 
-	/**
-	 * Is this the bext background-refresh self-request?
-	 */
 	public function is_cache_refresh_request(): bool {
 		return isset( $_SERVER['HTTP_X_BEXT_CACHE_REFRESH'] );
 	}
 
-	/**
-	 * Canonical host bext keys the cache by (aliases 301 -> canonical).
-	 */
 	public function canonical_host(): string {
 		$host = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
 		return $host ? strtolower( $host ) : '';
 	}
 
-	/**
-	 * The path prefix of this install (for subdirectory sites home_url() carries
-	 * a path, e.g. "/blog/"). Always begins and ends with "/".
-	 */
+	/** Install base path; "/" for root installs, "/blog/" for subdirectory. */
 	public function home_path(): string {
 		$p = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
 		$p = is_string( $p ) ? trim( $p, '/' ) : '';
 		return '' === $p ? '/' : '/' . $p . '/';
 	}
 
-	/**
-	 * The bext app id used for SDK calls (X-Bext-App-Id). Operator-set, else
-	 * derived from the canonical host.
-	 */
 	public function app_id(): string {
 		if ( defined( 'BEXT_WP_APP_ID' ) && BEXT_WP_APP_ID ) {
 			return (string) BEXT_WP_APP_ID;
 		}
-		return $this->canonical_host();
+		$s = (string) $this->setting( 'app_id', '' );
+		return '' !== $s ? $s : $this->canonical_host();
 	}
 
-	/**
-	 * Does the current request carry cookies that imply a personalized response
-	 * (logged-in, WooCommerce cart/session, or a comment author)? Such responses
-	 * must never be cached for the anonymous key.
-	 */
+	/** Does the current request imply a personalized (un-cacheable) response? */
 	public function is_personalized_request(): bool {
 		if ( is_user_logged_in() ) {
 			return true;
@@ -132,40 +224,72 @@ class Env {
 		return false;
 	}
 
-	/**
-	 * Forget the sticky detection flag (used on uninstall/deactivation so a site
-	 * that later moves off bext doesn't keep believing it's behind bext).
-	 */
 	public function clear_detection(): void {
 		delete_option( self::DETECT_OPTION );
 		$this->behind = null;
 	}
 
 	// ---------------------------------------------------------------------
-	// Loopback transport (all on 127.0.0.1:80, the bext main listener)
+	// Transport endpoint resolution
+	// ---------------------------------------------------------------------
+
+	/** Base origin for bext calls: the cloud endpoint, or loopback. */
+	public function endpoint_base(): string {
+		if ( 'cloud' === $this->mode() ) {
+			$url = $this->cloud_url();
+			if ( '' !== $url ) {
+				return untrailingslashit( $url );
+			}
+		}
+		return 'http://127.0.0.1';
+	}
+
+	public function cloud_url(): string {
+		if ( defined( 'BEXT_WP_CLOUD_URL' ) && BEXT_WP_CLOUD_URL ) {
+			return (string) BEXT_WP_CLOUD_URL;
+		}
+		return (string) $this->setting( 'cloud_url', '' );
+	}
+
+	public function cloud_token(): string {
+		if ( defined( 'BEXT_WP_CLOUD_TOKEN' ) && BEXT_WP_CLOUD_TOKEN ) {
+			return (string) BEXT_WP_CLOUD_TOKEN;
+		}
+		return (string) $this->setting( 'cloud_token', '' );
+	}
+
+	/** Auth + host headers appropriate to the current mode. */
+	private function transport_headers(): array {
+		$headers = array( 'Host' => $this->canonical_host() );
+		if ( 'cloud' === $this->mode() ) {
+			$token = $this->cloud_token();
+			if ( '' !== $token ) {
+				$headers['Authorization'] = 'Bearer ' . $token;
+			}
+		}
+		return $headers;
+	}
+
+	// ---------------------------------------------------------------------
+	// Loopback / cloud transport
 	// ---------------------------------------------------------------------
 
 	/**
-	 * Purge bext's FastCGI/proxy cache for the given paths/prefixes via the
-	 * main-listener endpoint that actually evicts the in-memory cache serving
-	 * WP pages. Non-blocking by default so callers on the request path never wait.
+	 * Purge bext's FastCGI/proxy cache for the given paths/prefixes.
 	 *
 	 * @param array $body     { host, paths[], prefixes[] }.
-	 * @param bool  $blocking Wait for + return the response (manual purge / CLI).
-	 * @return array|\WP_Error|true ['code'=>int,'body'=>string] when blocking, else true.
+	 * @param bool  $blocking Wait for + return the response.
+	 * @return array|\WP_Error|true
 	 */
 	public function purge_proxy( array $body, bool $blocking = false ) {
 		$res = wp_remote_post(
-			self::PURGE_ENDPOINT,
+			$this->endpoint_base() . self::PURGE_PATH,
 			array(
 				'method'      => 'POST',
 				'timeout'     => $blocking ? 5 : 1,
 				'blocking'    => $blocking,
 				'redirection' => 0,
-				'headers'     => array(
-					'Content-Type' => 'application/json',
-					'Host'         => $this->canonical_host(),
-				),
+				'headers'     => array( 'Content-Type' => 'application/json' ) + $this->transport_headers(),
 				'body'        => wp_json_encode( $body ),
 			)
 		);
@@ -182,30 +306,31 @@ class Env {
 	}
 
 	/**
-	 * Call a bext SDK endpoint with the app-id loopback bypass header.
+	 * Call a bext SDK endpoint (loopback app-id bypass, or cloud bearer).
 	 *
-	 * @param string     $method   HTTP method.
+	 * @param string     $method
 	 * @param string     $path     e.g. '/__bext/sdk/email/send'.
-	 * @param array|null $body     JSON body (for POST), or null.
-	 * @param bool       $blocking Wait for the response.
+	 * @param array|null $body
+	 * @param bool       $blocking
 	 * @return array|\WP_Error|true
 	 */
 	public function sdk_request( string $method, string $path, $body = null, bool $blocking = true ) {
+		$headers = array(
+			'Content-Type'  => 'application/json',
+			'X-Bext-App-Id' => $this->app_id(),
+		) + $this->transport_headers();
+
 		$args = array(
 			'method'      => strtoupper( $method ),
 			'timeout'     => $blocking ? 8 : 1,
 			'blocking'    => $blocking,
 			'redirection' => 0,
-			'headers'     => array(
-				'Content-Type'  => 'application/json',
-				'X-Bext-App-Id' => $this->app_id(),
-				'Host'          => $this->canonical_host(),
-			),
+			'headers'     => $headers,
 		);
 		if ( null !== $body ) {
 			$args['body'] = wp_json_encode( $body );
 		}
-		$res = wp_remote_request( 'http://127.0.0.1' . $path, $args );
+		$res = wp_remote_request( $this->endpoint_base() . $path, $args );
 		if ( ! $blocking ) {
 			return true;
 		}
@@ -219,18 +344,19 @@ class Env {
 	}
 
 	/**
-	 * GET a global bext endpoint (e.g. /__bext/health, /__bext/metrics).
+	 * GET a bext endpoint (e.g. /__bext/health, /__bext/metrics).
 	 *
-	 * @param string $path Endpoint path.
+	 * @param string $path
+	 * @param array  $override_headers Extra headers (e.g. a test token).
 	 * @return array|\WP_Error ['code'=>int,'body'=>string]
 	 */
-	public function bext_get( string $path ) {
+	public function bext_get( string $path, array $override_headers = array() ) {
 		$res = wp_remote_get(
-			'http://127.0.0.1' . $path,
+			$this->endpoint_base() . $path,
 			array(
-				'timeout'     => 4,
+				'timeout'     => 5,
 				'redirection' => 0,
-				'headers'     => array( 'Host' => $this->canonical_host() ),
+				'headers'     => $this->transport_headers() + $override_headers,
 			)
 		);
 		if ( is_wp_error( $res ) ) {

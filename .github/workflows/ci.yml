@@ -25,7 +25,11 @@ jobs:
           find . -path ./vendor -prune -o -name '*.php' -print0 \
             | xargs -0 -n1 -P4 php -l
       - name: Unit tests (no WP runtime needed)
-        run: php tests/unit/SdkHeadersTest.php
+        run: |
+          for t in tests/unit/*.php; do
+            echo "== $t =="
+            php "$t" || exit 1
+          done
 
   phpcs:
     name: WordPress coding standards

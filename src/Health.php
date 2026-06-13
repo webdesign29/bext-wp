@@ -40,10 +40,7 @@ class Health {
 
 	public function register(): void {
 		// Warning capture is opt-in (production-safe default off).
-		$capture = ( defined( 'WP_DEBUG' ) && WP_DEBUG )
-			|| ( defined( 'BEXT_WP_CAPTURE_WARNINGS' ) && BEXT_WP_CAPTURE_WARNINGS );
-
-		if ( $capture && apply_filters( 'bext/enable_warning_capture', true ) ) {
+		if ( $this->env->capture_warnings_enabled() && apply_filters( 'bext/enable_warning_capture', true ) ) {
 			$this->prev_handler = set_error_handler( array( $this, 'handle_php_error' ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler
 			add_action( 'shutdown', array( $this, 'persist_warnings' ), 1 );
 		}

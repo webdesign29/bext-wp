@@ -3,6 +3,27 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.3.0] - 2026-06-13
+
+Configurable integration + bext cloud support.
+
+### Added
+- **Settings page** (*Bext → Settings*): configure the whole integration from wp-admin — no
+  `wp-config` editing required. Connection mode, cloud endpoint + token, app id, per-module
+  toggles, purge-on-save, anonymous Cache-Control, SDK bridge, plus a **Test connection** button.
+- **Cloud mode** (`BEXT_WP_MODE=cloud`): talk to a remote bext endpoint with a bearer token
+  instead of loopback, so WordPress served by bext cloud can integrate off-box. See
+  [docs/cloud.md](docs/cloud.md).
+- bext-side: opt-in `BEXT_PURGE_TOKEN` authorizes remote `POST /__bext/cache/purge-proxy`
+  (constant-time compare, scoped to that endpoint; dormant unless the env var is set).
+- Docs: `docs/configuration.md`, `docs/cloud.md`, `docs/hooks.md`, `CONTRIBUTING.md`.
+- More unit tests (config precedence + transport selection); CI runs all unit tests.
+- `.github/FUNDING.yml` + README **Sponsors** (webdesign29, Inklura).
+
+### Changed
+- Configuration now layers **constant > setting > default** uniformly (`Env`).
+- README overhauled with badges, modes, and docs links.
+
 ## [0.2.0] - 2026-06-13
 
 Post-review hardening. The purge transport in 0.1.0 targeted the wrong endpoint and silently

@@ -70,28 +70,27 @@ final class Plugin {
 
 		$this->env = new Env();
 
-		// Module slug => class. Order is registration order, not load order.
-		$registry = array(
-			'cache'  => Cache::class,
-			'cron'   => Cron::class,
-			'health' => Health::class,
-			'admin'  => Admin::class,
-			'sdk'    => SDK::class,
+		// Always-on: the settings UI, dashboard, and health diagnostics exist
+		// regardless of enablement so the operator can always (re)configure.
+		$always = array(
+			'settings' => Settings::class,
+			'admin'    => Admin::class,
+			'health'   => Health::class,
+		);
+		// Feature modules, gated by mode + constant + setting + filter.
+		$gated = array(
+			'cache' => Cache::class,
+			'cron'  => Cron::class,
+			'sdk'   => SDK::class,
 		);
 
-		foreach ( $registry as $slug => $class ) {
-			if ( ! $this->is_module_enabled( $slug ) ) {
-				continue;
+		foreach ( $always as $slug => $class ) {
+			$this->boot_module( $slug, $class );
+		}
+		foreach ( $gated as $slug => $class ) {
+			if ( $this->env->is_enabled( $slug ) ) {
+				$this->boot_module( $slug, $class );
 			}
-			if ( ! class_exists( $class ) ) {
-				continue;
-			}
-			/** @var object $module */
-			$module = new $class( $this->env, $this );
-			if ( method_exists( $module, 'register' ) ) {
-				$module->register();
-			}
-			$this->modules[ $slug ] = $module;
 		}
 
 		// WP-CLI commands (only when running under WP-CLI).
@@ -108,21 +107,20 @@ final class Plugin {
 	}
 
 	/**
-	 * Is a module enabled? Default on; overridable by constant + filter.
+	 * Instantiate a module, call register(), and track it.
 	 *
-	 * @param string $slug Module slug.
+	 * @param string $slug  Module slug.
+	 * @param string $class Fully-qualified class name.
 	 */
-	private function is_module_enabled( string $slug ): bool {
-		$const = 'BEXT_WP_DISABLE_' . strtoupper( $slug );
-		if ( defined( $const ) && constant( $const ) ) {
-			return false;
+	private function boot_module( string $slug, string $class ): void {
+		if ( ! class_exists( $class ) ) {
+			return;
 		}
-
-		/**
-		 * Filter whether a bext-wp module is enabled.
-		 *
-		 * @param bool $enabled Whether the module is enabled (default true).
-		 */
-		return (bool) apply_filters( "bext/enable_{$slug}", true );
+		/** @var object $module */
+		$module = new $class( $this->env, $this );
+		if ( method_exists( $module, 'register' ) ) {
+			$module->register();
+		}
+		$this->modules[ $slug ] = $module;
 	}
 }

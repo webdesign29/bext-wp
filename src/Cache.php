@@ -48,25 +48,27 @@ class Cache {
 			return;
 		}
 
-		// Content-change → purge.
-		add_action( 'transition_post_status', array( $this, 'on_transition_post_status' ), 10, 3 );
-		add_action( 'save_post', array( $this, 'on_save_post' ), 10, 2 );
-		add_action( 'before_delete_post', array( $this, 'on_delete_post' ), 10, 1 );
-		add_action( 'edited_term', array( $this, 'on_term' ), 10, 3 );
-		add_action( 'created_term', array( $this, 'on_term' ), 10, 3 );
-		add_action( 'delete_term', array( $this, 'on_term' ), 10, 3 );
-		add_action( 'wp_update_nav_menu', array( $this, 'queue_all' ) );
-		add_action( 'customize_save_after', array( $this, 'queue_all' ) );
-		add_action( 'switch_theme', array( $this, 'queue_all' ) );
-		add_action( 'updated_option', array( $this, 'on_updated_option' ), 10, 1 );
-		add_action( 'wp_insert_comment', array( $this, 'on_comment' ), 10, 2 );
-		add_action( 'transition_comment_status', array( $this, 'on_comment_status' ), 10, 3 );
+		// Content-change → purge (the "purge on save" setting; on by default).
+		if ( $this->env->purge_on_save_enabled() ) {
+			add_action( 'transition_post_status', array( $this, 'on_transition_post_status' ), 10, 3 );
+			add_action( 'save_post', array( $this, 'on_save_post' ), 10, 2 );
+			add_action( 'before_delete_post', array( $this, 'on_delete_post' ), 10, 1 );
+			add_action( 'edited_term', array( $this, 'on_term' ), 10, 3 );
+			add_action( 'created_term', array( $this, 'on_term' ), 10, 3 );
+			add_action( 'delete_term', array( $this, 'on_term' ), 10, 3 );
+			add_action( 'wp_update_nav_menu', array( $this, 'queue_all' ) );
+			add_action( 'customize_save_after', array( $this, 'queue_all' ) );
+			add_action( 'switch_theme', array( $this, 'queue_all' ) );
+			add_action( 'updated_option', array( $this, 'on_updated_option' ), 10, 1 );
+			add_action( 'wp_insert_comment', array( $this, 'on_comment' ), 10, 2 );
+			add_action( 'transition_comment_status', array( $this, 'on_comment_status' ), 10, 3 );
 
-		// WooCommerce stock/product changes.
-		add_action( 'woocommerce_update_product', array( $this, 'on_woo_product' ), 10, 1 );
-		add_action( 'woocommerce_new_product', array( $this, 'on_woo_product' ), 10, 1 );
-		add_action( 'woocommerce_product_set_stock', array( $this, 'on_woo_stock' ), 10, 1 );
-		add_action( 'woocommerce_variation_set_stock', array( $this, 'on_woo_stock' ), 10, 1 );
+			// WooCommerce stock/product changes.
+			add_action( 'woocommerce_update_product', array( $this, 'on_woo_product' ), 10, 1 );
+			add_action( 'woocommerce_new_product', array( $this, 'on_woo_product' ), 10, 1 );
+			add_action( 'woocommerce_product_set_stock', array( $this, 'on_woo_stock' ), 10, 1 );
+			add_action( 'woocommerce_variation_set_stock', array( $this, 'on_woo_stock' ), 10, 1 );
+		}
 
 		// Personalization-safe response headers (front-end only).
 		add_action( 'template_redirect', array( $this, 'send_headers' ), 1 );
@@ -355,7 +357,7 @@ class Cache {
 			return;
 		}
 
-		$cc = apply_filters( 'bext/anonymous_cache_control', '' );
+		$cc = apply_filters( 'bext/anonymous_cache_control', $this->env->anon_cache_control() );
 		if ( is_string( $cc ) && '' !== $cc && $this->is_cacheable_view() ) {
 			header( 'Cache-Control: ' . $cc, true );
 		}
