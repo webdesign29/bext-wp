@@ -53,23 +53,21 @@ class Commands {
 	 *
 	 * ## OPTIONS
 	 *
-	 * [--url=<path>]
-	 * : Purge only this path (e.g. /about/). Omit to purge everything.
-	 *
-	 * [--all]
-	 * : Purge the entire site cache (default when --url is omitted).
+	 * [<path>]
+	 * : Purge only this path (e.g. /about/). Omit to purge the entire site.
+	 *   A positional arg is used because --url and --path are WP-CLI global flags.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp bext purge
-	 *     wp bext purge --url=/blog/hello-world/
+	 *     wp bext purge /blog/hello-world/
 	 *
 	 * @when after_wp_load
 	 */
 	public function purge( $args, $assoc ): void {
 		$env  = $this->plugin->env();
 		$host = $env->canonical_host();
-		$path = isset( $assoc['url'] ) ? (string) $assoc['url'] : '';
+		$path = isset( $args[0] ) ? (string) $args[0] : '';
 
 		if ( '' !== $path && '/' !== $path ) {
 			if ( '/' !== substr( $path, 0, 1 ) ) {

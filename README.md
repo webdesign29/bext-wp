@@ -100,7 +100,7 @@ can't take an email and WP sends it instead), and the `bext/booted` action.
 ```bash
 wp bext status                          # integration status
 wp bext purge                           # purge entire site cache
-wp bext purge --url=/blog/hello-world/  # purge one path
+wp bext purge /blog/hello-world/        # purge one path (positional)
 wp bext doctor                          # run health checks
 ```
 
