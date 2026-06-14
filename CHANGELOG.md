@@ -3,6 +3,34 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.6.0] - 2026-06-14
+
+A curated **Performance** module — well-known front-end optimizations that trim per-request PHP
+bootstrap and browser payload, plus opt-in front-end de-registration of back-end-only plugins.
+
+### Added
+- **`Performance` module** (`src/Performance.php`, gated by `enable_performance`, on by default).
+  Every tweak is individually toggleable via a `bext/perf/<name>` filter or a `perf_<name>` setting.
+  - **Safe defaults** (never change a correct site's output): strip the emoji-detection polyfill,
+    clean `wp_head` (generator / RSD / wlwmanifest / shortlink / adjacent-rel), throttle the
+    front-end Heartbeat to 60s, and load **Contact Form 7**'s CSS/JS only on pages that actually
+    embed a form.
+  - **Opt-in** (can change rendering, default off): drop jQuery Migrate, dequeue block-library CSS
+    on classic themes, disable oEmbed/embeds, and trim WooCommerce cart-fragments/styles off
+    non-shop pages.
+  - **Front-end plugin de-registration** (`perf_disable_backend_plugins` + a curated
+    `perf_frontend_disabled_plugins` list, or the `bext/perf/frontend_disabled_plugins` filter):
+    skips back-end-only plugins (admin tools, DB browsers, debug helpers) on genuine anonymous
+    front-end views via an `option_active_plugins` filter — never on admin / AJAX / cron / CLI /
+    REST / XML-RPC / login. Empty by default; opt in per plugin.
+- **Plugin-loader coexistence** — if a dedicated per-URL plugin loader is already active (Plugin
+  Organizer, Freesoul Deactivate Plugins, Plugin Load Filter, …), bext-wp **defers** to it instead
+  of fighting over `option_active_plugins`.
+
+### Notes
+- These reduce per-request bootstrap + browser payload; they do **not** speed a heavy theme's own
+  template rendering. For that, lean on bext's edge cache (long TTL + purge-on-change via `Cache`).
+
 ## [0.5.0] - 2026-06-13
 
 Extensibility, a broader purge set, a `wp bext flush` command, richer diagnostics — and a much

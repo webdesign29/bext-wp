@@ -107,9 +107,10 @@ final class Plugin {
 		}
 		// Feature modules, gated by mode + constant + setting + filter.
 		$gated = array(
-			'cache' => Cache::class,
-			'cron'  => Cron::class,
-			'sdk'   => SDK::class,
+			'cache'       => Cache::class,
+			'cron'        => Cron::class,
+			'sdk'         => SDK::class,
+			'performance' => Performance::class,
 		);
 
 		foreach ( $always as $slug => $class ) {
