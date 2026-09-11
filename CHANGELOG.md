@@ -3,6 +3,17 @@
 All notable changes to **Bext for WordPress** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to semantic versioning.
 
+## [0.5.1] - 2026-09-11
+
+Maintenance release on the 0.5.x line (sites not yet on 0.6.x): the home-page purge fix from 0.6.1
+only, without the 0.6.0 Performance module.
+
+### Fixed
+- **The home page was never purged on publish.** nginx serves `/` through the directory index
+  (`try_files $uri $uri/ …` + `index index.php`), and bext keyed that cache entry on the rewritten
+  `/index.php`, so the `/` path purge matched nothing and new posts stayed off the cached home page
+  until the entry expired. Queuing the home path now also purges `<home>index.php`.
+
 ## [0.5.0] - 2026-06-13
 
 Extensibility, a broader purge set, a `wp bext flush` command, richer diagnostics — and a much

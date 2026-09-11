@@ -285,10 +285,18 @@ class Cache {
 	 * @param string[] $paths Relative paths.
 	 */
 	public function queue_paths( array $paths ): void {
+		$home = $this->env->home_path();
 		foreach ( $paths as $p ) {
 			$p = $this->normalize_path( (string) $p );
 			if ( '' !== $p ) {
 				$this->paths[ $p ] = true;
+				// The home page reaches PHP through nginx's directory index
+				// (`try_files $uri $uri/ …` → `index index.php`). bext builds
+				// older than the original-URI cache key store it under
+				// `<home>index.php`, which a purge of `<home>` never matches.
+				if ( $p === $home ) {
+					$this->paths[ $home . 'index.php' ] = true;
+				}
 			}
 		}
 		$this->wire_flush();

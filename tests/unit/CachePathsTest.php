@@ -99,6 +99,19 @@ $c2 = new Cache( new Env(), Plugin::instance() );
 $c2->queue_paths( array( '', '   ', '/keep/' ) );
 $check( array_keys( $paths_prop->getValue( $c2 ) ) === array( '/keep/' ), 'queue_paths drops empty/whitespace paths' );
 
+// Home reaches PHP via the directory index; older bext keys it as <home>index.php.
+bext_test_reset();
+$GLOBALS['_bext_home'] = 'https://example.test';
+$ch1 = new Cache( new Env(), Plugin::instance() );
+$ch1->queue_paths( array( '/' ) );
+$check( array_keys( $paths_prop->getValue( $ch1 ) ) === array( '/', '/index.php' ), 'home purge also purges /index.php' );
+
+bext_test_reset();
+$GLOBALS['_bext_home'] = 'https://example.test/blog';
+$ch2 = new Cache( new Env(), Plugin::instance() );
+$ch2->queue_paths( array( '/blog/', '/' ) );
+$check( array_keys( $paths_prop->getValue( $ch2 ) ) === array( '/blog/', '/blog/index.php', '/' ), 'subdirectory home purge adds <base>index.php only' );
+
 // =====================================================================
 // queue_post_urls: the (broadened) purge set for a post
 // =====================================================================
@@ -115,6 +128,7 @@ $c3->queue_post_urls( 10 );
 $set = array_keys( $paths_prop->getValue( $c3 ) );
 
 $check( in_array( '/', $set, true ), 'post purge set includes home' );
+$check( in_array( '/index.php', $set, true ), 'post purge set includes the home directory-index key' );
 $check( in_array( '/hello/', $set, true ), 'post purge set includes the permalink' );
 $check( in_array( '/post/', $set, true ), 'post purge set includes the post-type archive' );
 $check( in_array( '/post/page/2/', $set, true ), 'post purge set includes the paginated archive (page/2)' );
